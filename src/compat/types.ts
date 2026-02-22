@@ -27,6 +27,8 @@ export enum OpcodeType {
   SLT = 'SLT',
   SPL = 'SPL',
   NOP = 'NOP',
+  LDP = 'LDP',
+  STP = 'STP',
 }
 
 export enum ModifierType {

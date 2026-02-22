@@ -27,7 +27,8 @@ const OPCODE_MAP: Record<string, OpcodeType> = {
   JMZ: OpcodeType.JMZ, JMN: OpcodeType.JMN, DJN: OpcodeType.DJN,
   CMP: OpcodeType.CMP, SLT: OpcodeType.SLT, SPL: OpcodeType.SPL,
   DAT: OpcodeType.DAT, JMP: OpcodeType.JMP, SEQ: OpcodeType.SEQ,
-  SNE: OpcodeType.SNE, NOP: OpcodeType.NOP,
+  SNE: OpcodeType.SNE, NOP: OpcodeType.NOP, LDP: OpcodeType.LDP,
+  STP: OpcodeType.STP,
 };
 
 const MODIFIER_MAP: Record<string, ModifierType> = {

@@ -2,7 +2,7 @@ import { type Instruction, type WarriorData, type SimulatorOptions, DEFAULT_OPTI
 import { encodeOpcode, decodeOpcode, INITIAL_INSTRUCTION } from '../constants.js';
 import { Core } from './core.js';
 import { SimWarrior } from './warrior.js';
-import { PSpace } from './pspace.js';
+import { PSpace, computePSpaceSize } from './pspace.js';
 import { positionWarriors } from './positioning.js';
 import { addMod, subMod } from '../utils/modular-arithmetic.js';
 import { rng } from '../utils/rng.js';
@@ -68,10 +68,14 @@ export class Simulator {
 
   loadWarriors(warriors: WarriorData[]): void {
     this.warriorData = warriors;
+    const coreSize = this.options.coreSize;
     this.warriors = warriors.map((w, i) =>
-      new SimWarrior(i, w, this.options.maxProcesses, warriors.length)
+      new SimWarrior(i, w, this.options.maxProcesses, warriors.length, coreSize)
     );
-    this.pSpaces = warriors.map(() => new PSpace(this.options.pSpaceSize));
+    const pSpaceSize = this.options.pSpaceSize > 0
+      ? this.options.pSpaceSize
+      : computePSpaceSize(coreSize);
+    this.pSpaces = warriors.map(() => new PSpace(pSpaceSize, coreSize));
 
     // Handle shared P-space via PIN
     for (let i = 0; i < warriors.length; i++) {
@@ -187,8 +191,9 @@ export class Simulator {
     let AA_Value: number;
 
     if (irAMode !== AddressMode.IMMEDIATE) {
-      addrA = addMod(irAValue, progCnt, coreSize);
-      const baseA = this.core.get(addrA);
+      const baseAddrA = addMod(irAValue, progCnt, coreSize);
+      addrA = baseAddrA;
+      const baseA = this.core.get(baseAddrA);
 
       if (irAMode !== AddressMode.DIRECT) {
         let fieldPtr: number;
@@ -201,10 +206,8 @@ export class Simulator {
           fieldPtr = baseA.bValue;
         }
 
-        if (irAMode !== AddressMode.B_INDIRECT && irAMode !== AddressMode.A_INDIRECT) {
-          // Pre-decrement or post-increment modes, need write access
-        } else {
-          this.emitCoreAccess(w.id, addrA, 'READ');
+        if (irAMode === AddressMode.B_INDIRECT || irAMode === AddressMode.A_INDIRECT) {
+          this.emitCoreAccess(w.id, baseAddrA, 'READ');
         }
 
         // Pre-decrement
@@ -212,13 +215,13 @@ export class Simulator {
           fieldPtr--;
           if (fieldPtr < 0) fieldPtr = coreSize1;
           if (isAField) {
-            this.core.get(addrA).aValue = fieldPtr;
+            this.core.get(baseAddrA).aValue = fieldPtr;
           } else {
-            this.core.get(addrA).bValue = fieldPtr;
+            this.core.get(baseAddrA).bValue = fieldPtr;
           }
         }
 
-        addrA = addMod(fieldPtr, addrA, coreSize);
+        addrA = addMod(fieldPtr, baseAddrA, coreSize);
         AA_Value = this.core.get(addrA).aValue;
         irAValue = this.core.get(addrA).bValue;
 
@@ -226,18 +229,10 @@ export class Simulator {
         if (irAMode === AddressMode.B_POSTINC || irAMode === AddressMode.A_POSTINC) {
           fieldPtr++;
           if (fieldPtr === coreSize) fieldPtr = 0;
-          const baseCell = this.core.get(addMod(irAValue === this.core.get(addrA).bValue ? subMod(addrA, fieldPtr - 1 < 0 ? coreSize1 : fieldPtr - 1, coreSize) : 0, 0, coreSize));
           if (isAField) {
-            this.core.get(subMod(addrA, (fieldPtr === 0 ? coreSize1 : fieldPtr - 1), coreSize) === 0 ? 0 : subMod(addrA, (fieldPtr === 0 ? coreSize1 : fieldPtr - 1), coreSize)).aValue = fieldPtr;
+            this.core.get(baseAddrA).aValue = fieldPtr;
           } else {
-            // Recompute: the base offset cell is at (addrA - fieldPtr_before_increment)
-          }
-          // Simplified: just update the original cell's field
-          const origAddr = subMod(addrA, fieldPtr === 0 ? coreSize1 : fieldPtr - 1, coreSize);
-          if (isAField) {
-            this.core.get(origAddr).aValue = fieldPtr;
-          } else {
-            this.core.get(origAddr).bValue = fieldPtr;
+            this.core.get(baseAddrA).bValue = fieldPtr;
           }
         }
       } else {
@@ -245,6 +240,8 @@ export class Simulator {
         AA_Value = baseA.aValue;
         irAValue = baseA.bValue;
       }
+
+      addrA = this.foldr(addrA, progCnt);
     } else {
       // IMMEDIATE mode
       AA_Value = irAValue;
@@ -257,8 +254,9 @@ export class Simulator {
     let AB_Value: number;
 
     if (irBMode !== AddressMode.IMMEDIATE) {
-      addrB = addMod(irBValue, progCnt, coreSize);
-      const baseB = this.core.get(addrB);
+      const baseAddrB = addMod(irBValue, progCnt, coreSize);
+      addrB = baseAddrB;
+      const baseB = this.core.get(baseAddrB);
 
       if (irBMode !== AddressMode.DIRECT) {
         let fieldPtr: number;
@@ -271,10 +269,8 @@ export class Simulator {
           fieldPtr = baseB.bValue;
         }
 
-        if (irBMode !== AddressMode.B_INDIRECT && irBMode !== AddressMode.A_INDIRECT) {
-          // pre/post modes
-        } else {
-          this.emitCoreAccess(w.id, addrB, 'READ');
+        if (irBMode === AddressMode.B_INDIRECT || irBMode === AddressMode.A_INDIRECT) {
+          this.emitCoreAccess(w.id, baseAddrB, 'READ');
         }
 
         // Pre-decrement
@@ -282,32 +278,32 @@ export class Simulator {
           fieldPtr--;
           if (fieldPtr < 0) fieldPtr = coreSize1;
           if (isAField) {
-            this.core.get(addrB).aValue = fieldPtr;
+            this.core.get(baseAddrB).aValue = fieldPtr;
           } else {
-            this.core.get(addrB).bValue = fieldPtr;
+            this.core.get(baseAddrB).bValue = fieldPtr;
           }
         }
 
-        const readAddr = addMod(fieldPtr, addrB, coreSize);
-        addrB = readAddr;
-        AB_Value = this.core.get(readAddr).aValue;
-        irBValue = this.core.get(readAddr).bValue;
+        addrB = addMod(fieldPtr, baseAddrB, coreSize);
+        AB_Value = this.core.get(addrB).aValue;
+        irBValue = this.core.get(addrB).bValue;
 
         // Post-increment
         if (irBMode === AddressMode.B_POSTINC || irBMode === AddressMode.A_POSTINC) {
           fieldPtr++;
           if (fieldPtr === coreSize) fieldPtr = 0;
-          const origAddr = subMod(readAddr, fieldPtr === 0 ? coreSize1 : fieldPtr - 1, coreSize);
           if (isAField) {
-            this.core.get(origAddr).aValue = fieldPtr;
+            this.core.get(baseAddrB).aValue = fieldPtr;
           } else {
-            this.core.get(origAddr).bValue = fieldPtr;
+            this.core.get(baseAddrB).bValue = fieldPtr;
           }
         }
       } else {
         AB_Value = baseB.aValue;
         irBValue = baseB.bValue;
       }
+
+      addrB = this.foldw(addrB, progCnt);
     } else {
       addrB = progCnt;
       irBValue = this.core.get(addrB).bValue;
@@ -502,6 +498,28 @@ export class Simulator {
       }
     }
     return checksum;
+  }
+
+  private foldr(addr: number, progCnt: number): number {
+    if (this.options.readLimit === 0) return addr;
+    const rl = this.options.readLimit;
+    const cs = this.options.coreSize;
+    let result = (addr + cs - progCnt) % rl;
+    if (result > Math.floor(rl / 2)) {
+      result = result + cs - rl;
+    }
+    return addMod(result, progCnt, cs);
+  }
+
+  private foldw(addr: number, progCnt: number): number {
+    if (this.options.writeLimit === 0) return addr;
+    const wl = this.options.writeLimit;
+    const cs = this.options.coreSize;
+    let result = (addr + cs - progCnt) % wl;
+    if (result > Math.floor(wl / 2)) {
+      result = result + cs - wl;
+    }
+    return addMod(result, progCnt, cs);
   }
 
   private emitCoreAccess(warriorId: number, address: number, accessType: 'READ' | 'WRITE' | 'EXECUTE'): void {
@@ -844,21 +862,26 @@ export class Simulator {
   private execLDP(mod: Modifier, _addrA: number, addrB: number, AA: number, AVal: number, w: SimWarrior, _cs: number): void {
     const ps = this.pSpaces[w.pSpaceIndex];
     const dst = this.core.get(addrB);
+    // Helper: get pspace value, using warrior's lastResult for index 0
+    const pget = (index: number): number => {
+      if (index % ps.size === 0) return w.lastResult;
+      return ps.get(index);
+    };
     switch (mod) {
       case Modifier.A:
-        dst.aValue = ps.get(AA);
+        dst.aValue = pget(AA);
         break;
       case Modifier.B:
       case Modifier.F:
       case Modifier.X:
       case Modifier.I:
-        dst.bValue = ps.get(AVal);
+        dst.bValue = pget(AVal);
         break;
       case Modifier.AB:
-        dst.bValue = ps.get(AA);
+        dst.bValue = pget(AA);
         break;
       case Modifier.BA:
-        dst.aValue = ps.get(AVal);
+        dst.aValue = pget(AVal);
         break;
     }
     this.emitCoreAccess(w.id, addrB, 'WRITE');

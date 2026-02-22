@@ -20,6 +20,7 @@ interface Label {
   value: number;
   isEqu: boolean;
   equText?: string;
+  equLines?: string[];
 }
 
 export class Assembler {
@@ -58,16 +59,31 @@ export class Assembler {
     predefined.set('WARRIORS', opts.warriors);
     predefined.set('ROUNDS', opts.rounds);
     predefined.set('PSPACESIZE', opts.pSpaceSize);
+    // Issue #9: READLIMIT/WRITELIMIT predefined constants
+    predefined.set('READLIMIT', opts.readLimit === 0 ? opts.coreSize : opts.readLimit);
+    predefined.set('WRITELIMIT', opts.writeLimit === 0 ? opts.coreSize : opts.writeLimit);
 
     // Pass 1: collect labels, EQUs, metadata, and instruction lines
     let instrCount = 0;
     const equDefs: Map<string, string> = new Map();
+    // Issue #1: multi-line EQU storage
+    const multiLineEquDefs: Map<string, string[]> = new Map();
     let forDepth = 0;
     let forBuffer: { label: string | null; count: number; lines: string[] } | null = null;
+
+    // Issue #6: ;redcode delimiter tracking
+    let redcodeFound = false;
+    let redcodeSecond = false;
+
+    // Track the last label seen for multi-line EQU accumulation
+    let lastEquLabel: string | null = null;
 
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
       let line = lines[lineNum];
       const rawLine = line;
+
+      // Issue #6: if second ;redcode found, stop processing
+      if (redcodeSecond) break;
 
       // Handle comments at the start of the line (metadata directives)
       const trimmed = line.trim();
@@ -75,20 +91,58 @@ export class Assembler {
         const directive = trimmed.substring(1).trim();
         const upperDir = directive.toUpperCase();
 
-        if (upperDir.startsWith('REDCODE')) continue;
+        if (upperDir.startsWith('REDCODE')) {
+          // Issue #6: ;redcode delimiter
+          if (!redcodeFound) {
+            // First ;redcode: clear accumulated state (fresh start)
+            redcodeFound = true;
+            instructions.length = 0;
+            instrCount = 0;
+            labels.clear();
+            equDefs.clear();
+            multiLineEquDefs.clear();
+            name = 'Unknown';
+            author = 'Anonymous';
+            strategy = '';
+            pin = null;
+            orgOffset = 0;
+            endOffset = null;
+            lastEquLabel = null;
+          } else {
+            // Second ;redcode: stop processing
+            redcodeSecond = true;
+          }
+          continue;
+        }
         if (upperDir.startsWith('NAME')) {
           name = directive.substring(4).trim() || 'Unknown';
+          lastEquLabel = null;
           continue;
         }
         if (upperDir.startsWith('AUTHOR')) {
           author = directive.substring(6).trim() || 'Anonymous';
+          lastEquLabel = null;
           continue;
         }
         if (upperDir.startsWith('STRATEGY')) {
           strategy += (strategy ? '\n' : '') + directive.substring(8).trim();
+          lastEquLabel = null;
           continue;
         }
-        if (upperDir.startsWith('ASSERT')) continue;
+        if (upperDir.startsWith('ASSERT')) {
+          // Issue #5: ;assert evaluation
+          const assertExpr = directive.substring(6).trim();
+          if (assertExpr) {
+            const substituted = this.substituteEqus(assertExpr, equDefs, predefined);
+            const evalResult = this.evaluator.evaluate(substituted);
+            if (evalResult.ok && evalResult.value === 0) {
+              messages.push({ type: 'ERROR', line: lineNum + 1, text: `Assertion failed: ${assertExpr}` });
+            }
+          }
+          lastEquLabel = null;
+          continue;
+        }
+        lastEquLabel = null;
         continue;
       }
 
@@ -104,17 +158,22 @@ export class Assembler {
         if (upperLine.startsWith('ROF')) {
           forDepth--;
           if (forDepth === 0) {
+            // Issue #2: Recursively expand inner FOR/ROF blocks before expanding
+            const expandedLines = this.expandNestedFor(forBuffer.lines, equDefs, predefined);
             // Expand FOR block
             for (let i = 1; i <= forBuffer.count; i++) {
               if (forBuffer.label) {
                 equDefs.set(forBuffer.label, String(i));
               }
-              for (const fline of forBuffer.lines) {
-                instructions.push({ line: lineNum + 1, text: fline, rawLine });
+              for (const fline of expandedLines) {
+                // Issue #3: & concatenation operator
+                const processedLine = this.substituteAmpersand(fline, equDefs, predefined);
+                instructions.push({ line: lineNum + 1, text: processedLine, rawLine });
                 instrCount++;
               }
             }
             forBuffer = null;
+            lastEquLabel = null;
             continue;
           }
         }
@@ -153,6 +212,7 @@ export class Assembler {
         if (labelName) {
           labels.set(labelName, { name: labelName, value: instrCount, isEqu: false });
         }
+        lastEquLabel = null;
         continue;
       }
 
@@ -163,11 +223,28 @@ export class Assembler {
           const equValue = tokens.slice(tokenIdx + 1).join(' ');
           equDefs.set(labelName, equValue);
           labels.set(labelName, { name: labelName, value: 0, isEqu: true, equText: equValue });
+          // Issue #1: start multi-line EQU tracking
+          multiLineEquDefs.set(labelName, [equValue]);
+          lastEquLabel = labelName;
+        } else if (lastEquLabel) {
+          // Issue #1: continuation EQU line (no new label, follows a previous EQU)
+          const equValue = tokens.slice(tokenIdx + 1).join(' ');
+          const existing = multiLineEquDefs.get(lastEquLabel) || [];
+          existing.push(equValue);
+          multiLineEquDefs.set(lastEquLabel, existing);
+          // Update the label to indicate it's multi-line
+          const label = labels.get(lastEquLabel);
+          if (label) {
+            label.equLines = existing;
+          }
         } else {
           messages.push({ type: 'ERROR', line: lineNum + 1, text: 'EQU without label' });
+          lastEquLabel = null;
         }
         continue;
       }
+
+      lastEquLabel = null;
 
       if (opToken === 'FOR') {
         const countExpr = tokens.slice(tokenIdx + 1).join(' ');
@@ -181,7 +258,8 @@ export class Assembler {
 
       if (opToken === 'ORG') {
         const offsetExpr = tokens.slice(tokenIdx + 1).join(' ');
-        const substituted = this.substituteEqus(offsetExpr, equDefs, predefined);
+        // Issue #10: Use absolute label values for ORG
+        const substituted = this.substituteLabelsAndEqusAbsolute(offsetExpr, labels, equDefs, predefined);
         const evalResult = this.evaluator.evaluate(substituted);
         if (evalResult.ok) orgOffset = evalResult.value;
         continue;
@@ -190,7 +268,8 @@ export class Assembler {
       if (opToken === 'END') {
         const offsetExpr = tokens.slice(tokenIdx + 1).join(' ');
         if (offsetExpr.trim()) {
-          const substituted = this.substituteEqus(offsetExpr, equDefs, predefined);
+          // Issue #10: Use absolute label values for END
+          const substituted = this.substituteLabelsAndEqusAbsolute(offsetExpr, labels, equDefs, predefined);
           const evalResult = this.evaluator.evaluate(substituted);
           if (evalResult.ok && evalResult.value !== 0) endOffset = evalResult.value;
         }
@@ -199,7 +278,8 @@ export class Assembler {
 
       if (opToken === 'PIN') {
         const pinExpr = tokens.slice(tokenIdx + 1).join(' ');
-        const substituted = this.substituteEqus(pinExpr, equDefs, predefined);
+        // Issue #10: Use absolute label values for PIN
+        const substituted = this.substituteLabelsAndEqusAbsolute(pinExpr, labels, equDefs, predefined);
         const evalResult = this.evaluator.evaluate(substituted);
         if (evalResult.ok) pin = evalResult.value;
         continue;
@@ -209,6 +289,8 @@ export class Assembler {
       if (labelName) {
         labels.set(labelName, { name: labelName, value: instrCount, isEqu: false });
       }
+
+      // Issue #1: Check if this is a reference to a multi-line EQU
       const instrText = tokens.slice(tokenIdx).join(' ');
       instructions.push({ line: lineNum + 1, text: instrText, rawLine });
       instrCount++;
@@ -218,22 +300,31 @@ export class Assembler {
       orgOffset = endOffset;
     }
 
+    // Issue #1: Expand multi-line EQU references in instructions
+    const expandedInstructions = this.expandMultiLineEqus(instructions, multiLineEquDefs);
+
     // Check instruction count
-    if (instrCount === 0) {
+    const finalInstrCount = expandedInstructions.length;
+    if (finalInstrCount === 0) {
       messages.push({ type: 'ERROR', line: 0, text: 'No instructions found' });
       return { success: false, warrior: null, messages };
     }
 
-    if (instrCount > opts.maxLength) {
-      messages.push({ type: 'WARNING', line: 0, text: `Warrior has ${instrCount} instructions, limit is ${opts.maxLength}` });
+    if (finalInstrCount > opts.maxLength) {
+      messages.push({ type: 'WARNING', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${opts.maxLength}` });
     }
+
+    // Rebuild labels with correct instruction indices after multi-line EQU expansion
+    // Labels that point to instructions need to be recalculated if multi-line EQUs shifted things
 
     // Pass 2: assemble instructions
     const assembled: Instruction[] = [];
 
-    for (let i = 0; i < instructions.length; i++) {
-      const { line: lineNum, text } = instructions[i];
-      const result = this.assembleInstruction(text, i, instrCount, labels, equDefs, predefined, opts.coreSize, lineNum, messages);
+    for (let i = 0; i < expandedInstructions.length; i++) {
+      const { line: lineNum, text } = expandedInstructions[i];
+      // Issue #4: Set CURLINE predefined variable
+      predefined.set('CURLINE', i);
+      const result = this.assembleInstruction(text, i, finalInstrCount, labels, equDefs, predefined, opts.coreSize, lineNum, messages);
       if (result) {
         assembled.push(result);
       }
@@ -254,6 +345,7 @@ export class Assembler {
         author,
         strategy,
         pin,
+        warnings: messages.filter(m => m.type === 'WARNING').map(m => m.text),
       },
       messages,
     };
@@ -360,8 +452,9 @@ export class Assembler {
     }
 
     // Evaluate expressions
-    const aSubstituted = this.substituteLabelsAndEqus(aExpr, instrIdx, totalInstr, labels, equDefs, predefined);
-    const bSubstituted = this.substituteLabelsAndEqus(bExpr, instrIdx, totalInstr, labels, equDefs, predefined);
+    // Issue #7 & #8: pass messages for undefined symbol warnings and cycle detection
+    const aSubstituted = this.substituteLabelsAndEqus(aExpr, instrIdx, totalInstr, labels, equDefs, predefined, messages, lineNum);
+    const bSubstituted = this.substituteLabelsAndEqus(bExpr, instrIdx, totalInstr, labels, equDefs, predefined, messages, lineNum);
 
     const aResult = this.evaluator.evaluate(aSubstituted);
     const bResult = this.evaluator.evaluate(bSubstituted);
@@ -459,6 +552,10 @@ export class Assembler {
     labels: Map<string, Label>,
     equDefs: Map<string, string>,
     predefined: Map<string, number>,
+    messages?: AssemblerMessage[],
+    lineNum?: number,
+    // Issue #8: cycle detection set
+    visited?: Set<string>,
   ): string {
     // Replace label/EQU references with numeric values
     return expr.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (match) => {
@@ -469,18 +566,38 @@ export class Assembler {
         return String(predefined.get(upper));
       }
 
+      // Issue #8: cycle detection
+      const cycleSet = visited ?? new Set<string>();
+
       // Check EQU
       if (equDefs.has(upper)) {
+        if (cycleSet.has(upper)) {
+          // Cycle detected
+          if (messages) {
+            messages.push({ type: 'WARNING', line: lineNum ?? 0, text: `Recursive EQU cycle detected for ${upper}` });
+          }
+          return '0';
+        }
+        const newVisited = new Set(cycleSet);
+        newVisited.add(upper);
         const equVal = equDefs.get(upper)!;
         // Recursively substitute
-        return this.substituteLabelsAndEqus(equVal, instrIdx, _totalInstr, labels, equDefs, predefined);
+        return this.substituteLabelsAndEqus(equVal, instrIdx, _totalInstr, labels, equDefs, predefined, messages, lineNum, newVisited);
       }
 
       // Check labels
       if (labels.has(upper)) {
         const label = labels.get(upper)!;
         if (label.isEqu && label.equText) {
-          return this.substituteLabelsAndEqus(label.equText, instrIdx, _totalInstr, labels, equDefs, predefined);
+          if (cycleSet.has(upper)) {
+            if (messages) {
+              messages.push({ type: 'WARNING', line: lineNum ?? 0, text: `Recursive EQU cycle detected for ${upper}` });
+            }
+            return '0';
+          }
+          const newVisited = new Set(cycleSet);
+          newVisited.add(upper);
+          return this.substituteLabelsAndEqus(label.equText, instrIdx, _totalInstr, labels, equDefs, predefined, messages, lineNum, newVisited);
         }
         return String(label.value - instrIdx);
       }
@@ -488,6 +605,44 @@ export class Assembler {
       // Single character could be a register
       if (match.length === 1) return match;
 
+      // Issue #7: undefined symbol warning
+      if (messages) {
+        messages.push({ type: 'WARNING', line: lineNum ?? 0, text: `Undefined symbol: ${match}` });
+      }
+      return '0';
+    });
+  }
+
+  /**
+   * Issue #10: Substitute labels with absolute values (for ORG/END/PIN directives)
+   */
+  private substituteLabelsAndEqusAbsolute(
+    expr: string,
+    labels: Map<string, Label>,
+    equDefs: Map<string, string>,
+    predefined: Map<string, number>,
+  ): string {
+    return expr.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (match) => {
+      const upper = match.toUpperCase();
+
+      if (predefined.has(upper)) {
+        return String(predefined.get(upper));
+      }
+
+      if (equDefs.has(upper)) {
+        return this.substituteLabelsAndEqusAbsolute(equDefs.get(upper)!, labels, equDefs, predefined);
+      }
+
+      if (labels.has(upper)) {
+        const label = labels.get(upper)!;
+        if (label.isEqu && label.equText) {
+          return this.substituteLabelsAndEqusAbsolute(label.equText, labels, equDefs, predefined);
+        }
+        // Use absolute value (not relative)
+        return String(label.value);
+      }
+
+      if (match.length === 1) return match;
       return '0';
     });
   }
@@ -496,25 +651,147 @@ export class Assembler {
    * Substitute EQU definitions as raw text macros (before addressing mode parsing).
    * This handles EQUs like `dmopa equ <2667` where the value includes an addressing mode.
    */
-  private substituteEquText(text: string, equDefs: Map<string, string>, predefined: Map<string, number>): string {
+  private substituteEquText(text: string, equDefs: Map<string, string>, predefined: Map<string, number>, visited?: Set<string>): string {
     return text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (match) => {
       const upper = match.toUpperCase();
       if (equDefs.has(upper)) {
-        return this.substituteEquText(equDefs.get(upper)!, equDefs, predefined);
+        const cycleSet = visited ?? new Set<string>();
+        if (cycleSet.has(upper)) return match; // cycle detected
+        const newVisited = new Set(cycleSet);
+        newVisited.add(upper);
+        return this.substituteEquText(equDefs.get(upper)!, equDefs, predefined, newVisited);
       }
       if (predefined.has(upper)) return String(predefined.get(upper));
       return match; // Leave labels as-is for later resolution
     });
   }
 
-  private substituteEqus(expr: string, equDefs: Map<string, string>, predefined: Map<string, number>): string {
+  private substituteEqus(expr: string, equDefs: Map<string, string>, predefined: Map<string, number>, visited?: Set<string>): string {
     return expr.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (match) => {
       const upper = match.toUpperCase();
       if (predefined.has(upper)) return String(predefined.get(upper));
-      if (equDefs.has(upper)) return this.substituteEqus(equDefs.get(upper)!, equDefs, predefined);
+      if (equDefs.has(upper)) {
+        const cycleSet = visited ?? new Set<string>();
+        if (cycleSet.has(upper)) return '0'; // cycle detected
+        const newVisited = new Set(cycleSet);
+        newVisited.add(upper);
+        return this.substituteEqus(equDefs.get(upper)!, equDefs, predefined, newVisited);
+      }
       if (match.length === 1) return match;
       return '0';
     });
+  }
+
+  /**
+   * Issue #3: Replace &varname concatenation in FOR loop bodies.
+   * If equDefs has 'I' = '3', then 'lab&I' becomes 'lab3'.
+   */
+  private substituteAmpersand(line: string, equDefs: Map<string, string>, predefined: Map<string, number>): string {
+    return line.replace(/&([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => {
+      const upper = varName.toUpperCase();
+      if (equDefs.has(upper)) return equDefs.get(upper)!;
+      if (predefined.has(upper)) return String(predefined.get(upper));
+      return varName;
+    });
+  }
+
+  /**
+   * Issue #2: Recursively expand nested FOR/ROF blocks within a list of lines.
+   */
+  private expandNestedFor(lines: string[], equDefs: Map<string, string>, predefined: Map<string, number>): string[] {
+    const result: string[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const upperLine = lines[i].toUpperCase().trim();
+
+      if (upperLine.startsWith('FOR')) {
+        // Parse inner FOR
+        const tokens = this.tokenizeLine(lines[i]);
+        let labelName: string | null = null;
+        let tokenIdx = 0;
+
+        // Check for label before FOR
+        while (tokenIdx < tokens.length) {
+          const tok = tokens[tokenIdx].toUpperCase();
+          if (tok === 'FOR') break;
+          let lbl = tokens[tokenIdx];
+          if (lbl.endsWith(':')) lbl = lbl.slice(0, -1);
+          labelName = lbl.toUpperCase();
+          tokenIdx++;
+        }
+
+        const countExpr = tokens.slice(tokenIdx + 1).join(' ');
+        const substituted = this.substituteEqus(countExpr, equDefs, predefined);
+        const evalResult = this.evaluator.evaluate(substituted);
+        const count = evalResult.ok ? evalResult.value : 0;
+
+        // Collect inner FOR body
+        let depth = 1;
+        const innerLines: string[] = [];
+        i++;
+        while (i < lines.length && depth > 0) {
+          const innerUpper = lines[i].toUpperCase().trim();
+          if (innerUpper.startsWith('ROF')) {
+            depth--;
+            if (depth === 0) {
+              i++;
+              break;
+            }
+          }
+          if (innerUpper.startsWith('FOR')) {
+            depth++;
+          }
+          innerLines.push(lines[i]);
+          i++;
+        }
+
+        // Recursively expand the inner body
+        const expandedInner = this.expandNestedFor(innerLines, equDefs, predefined);
+
+        // Expand the inner FOR count times
+        for (let j = 1; j <= count; j++) {
+          if (labelName) {
+            equDefs.set(labelName, String(j));
+          }
+          for (const fline of expandedInner) {
+            result.push(fline);
+          }
+        }
+      } else {
+        result.push(lines[i]);
+        i++;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Issue #1: Expand multi-line EQU references in instructions.
+   * If an instruction line is simply a reference to a multi-line EQU label,
+   * expand it into multiple instruction lines.
+   */
+  private expandMultiLineEqus(
+    instructions: { line: number; text: string; rawLine: string }[],
+    multiLineEquDefs: Map<string, string[]>,
+  ): { line: number; text: string; rawLine: string }[] {
+    const result: { line: number; text: string; rawLine: string }[] = [];
+
+    for (const instr of instructions) {
+      const trimmed = instr.text.trim().toUpperCase();
+      // Check if the entire instruction is just a multi-line EQU reference
+      if (multiLineEquDefs.has(trimmed) && multiLineEquDefs.get(trimmed)!.length > 1) {
+        const equLines = multiLineEquDefs.get(trimmed)!;
+        for (const equLine of equLines) {
+          result.push({ line: instr.line, text: equLine, rawLine: instr.rawLine });
+        }
+      } else {
+        result.push(instr);
+      }
+    }
+
+    return result;
   }
 
   private tokenizeLine(line: string): string[] {

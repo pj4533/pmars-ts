@@ -17,13 +17,6 @@ export function positionWarriors(
   const positions = new Array(warriorCount).fill(0);
   if (warriorCount <= 1) return { positions, seed };
 
-  if (warriorCount === 2) {
-    const range = coreSize + 1 - (separation << 1);
-    positions[1] = separation + seed % range;
-    seed = rng(seed);
-    return { positions, seed };
-  }
-
   // Multi-warrior positioning: try posit(), fall back to npos()
   const result = posit(warriorCount, coreSize, separation, seed, positions);
   if (result.success) {
@@ -62,7 +55,7 @@ function posit(
     if (!overlap) {
       pos++;
     } else {
-      if (retries2 === 0) return { success: true, positions, seed }; // exceeded
+      if (retries2 === 0) return { success: false, positions, seed }; // exceeded
       if (retries1 === 0) {
         pos = overlapIdx;
         retries2--;
@@ -73,7 +66,7 @@ function posit(
     }
   } while (pos < warriorCount);
 
-  return { success: false, positions, seed };
+  return { success: true, positions, seed };
 }
 
 function npos(

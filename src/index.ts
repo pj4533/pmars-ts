@@ -3,7 +3,7 @@ export { Simulator } from './simulator/index.js';
 export type { CoreAccessEvent, TaskCountEvent, RoundEndEvent, SimulatorEventListener, RoundResult } from './simulator/index.js';
 export { Core } from './simulator/core.js';
 export { SimWarrior } from './simulator/warrior.js';
-export { PSpace } from './simulator/pspace.js';
+export { PSpace, computePSpaceSize } from './simulator/pspace.js';
 export { Assembler, disassemble } from './assembler/index.js';
 export type { AssembleResult, AssemblerMessage } from './assembler/index.js';
 export { ExpressionEvaluator } from './assembler/expression.js';

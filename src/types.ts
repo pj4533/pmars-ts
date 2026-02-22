@@ -56,6 +56,7 @@ export interface WarriorData {
   author: string;
   strategy: string;
   pin: number | null;
+  warnings?: string[];
 }
 
 export interface SimulatorOptions {

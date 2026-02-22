@@ -1,12 +1,19 @@
+export function computePSpaceSize(coreSize: number): number {
+  for (let i = 16; i >= 1; i--) {
+    if (coreSize % i === 0) return Math.floor(coreSize / i);
+  }
+  return coreSize; // fallback
+}
+
 export class PSpace {
   private space: number[];
   readonly size: number;
   lastResult: number;
 
-  constructor(size: number) {
+  constructor(size: number, coreSize: number) {
     this.size = size;
     this.space = new Array(size).fill(0);
-    this.lastResult = 0;
+    this.lastResult = coreSize - 1;
   }
 
   get(index: number): number {

@@ -15,7 +15,7 @@ export class SimWarrior {
   pSpaceIDNumber: number;
   alive: boolean;
 
-  constructor(id: number, data: WarriorData, maxProcesses: number, maxWarriors: number) {
+  constructor(id: number, data: WarriorData, maxProcesses: number, maxWarriors: number, coreSize: number) {
     this.id = id;
     this.name = data.name || 'Unknown';
     this.author = data.author || 'Anonymous';
@@ -24,7 +24,7 @@ export class SimWarrior {
     this.startOffset = data.startOffset;
     this.tasks = 0;
     this.score = new Array(maxWarriors * 2 - 1).fill(0);
-    this.lastResult = 0;
+    this.lastResult = coreSize - 1;
     this.pSpaceIndex = id;
     this.pSpaceIDNumber = data.pin ?? id;
     this.alive = true;
