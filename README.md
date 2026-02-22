@@ -1,6 +1,6 @@
 # pmars-ts
 
-TypeScript port of [pmars](https://corewar.co.uk/pmars/) (portable Memory Array Redcode Simulator) for [Corewar](https://corewar.co.uk/). Faithfully replicates the behavior of the original C pmars implementation.
+TypeScript port of [pMARS](https://corewar.co.uk/pmars.htm) (portable Memory Array Redcode Simulator) for [Core War](https://corewar.co.uk/). Faithfully replicates the behavior of the original C implementation.
 
 Drop-in replacement for the [`corewar`](https://www.npmjs.com/package/corewar) npm package.
 
@@ -111,6 +111,20 @@ corewar.runHill(rules, warriors, messageProvider?)
 - Zero runtime dependencies
 - ESM and CommonJS dual output
 
+## Attribution
+
+This project is a TypeScript port of **pMARS** (portable Memory Array Redcode Simulator), the official Redcode simulator of [rec.games.corewar](https://groups.google.com/g/rec.games.corewar).
+
+**Original pMARS authors:**
+- Albert Ma
+- Nandor Sieben
+- Stefan Strack
+- Mintardjo Wangsaw
+
+**Additional contributors to the original C codebase:** Alex Macaulay (Mac front-end), Martin Maierhofer (X-Windows and Linux SVGA displays), Nathan Summers (VMS port), Ken Espiritu (optimized x86 sim.c), Ilmari Karonen (-P option and improvements), Joonas Pihlaja (read/write limits and improvements).
+
+pMARS has been actively maintained with patches reviewed by John Metcalf. More information at [corewar.co.uk/pmars.htm](https://corewar.co.uk/pmars.htm).
+
 ## License
 
-GPL-2.0 - see [LICENSE](LICENSE) for details. Matches the original pmars license.
+GPL-2.0 - see [LICENSE](LICENSE) for details. Matches the original pMARS license.
