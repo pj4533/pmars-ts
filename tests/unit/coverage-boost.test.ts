@@ -78,10 +78,12 @@ describe('Assembler edge cases', () => {
     expect(result.messages.some(m => m.type === 'ERROR')).toBe(true);
   });
 
-  it('warns on exceeding instruction limit', () => {
+  it('errors on exceeding instruction limit', () => {
     const asm = new Assembler({ coreSize: 80, maxLength: 2, maxProcesses: 80 });
     const result = asm.assemble('MOV $0, $1\nDAT #0, #0\nJMP $-2');
-    expect(result.messages.some(m => m.type === 'WARNING' && m.text.includes('limit'))).toBe(true);
+    // C treats exceeding instrLim as an error, not a warning
+    expect(result.messages.some(m => m.type === 'ERROR' && m.text.includes('limit'))).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it('handles END with offset', () => {

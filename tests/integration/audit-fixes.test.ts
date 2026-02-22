@@ -505,3 +505,175 @@ describe('Assembler fixes', () => {
     expect(result.warrior!.instructions.length).toBe(6);
   });
 });
+
+// --- AUDIT ROUND 2 FIXES ---
+
+describe('STP/LDP P-space index 0 fix (Bug #1)', () => {
+  it('STP to index 0 updates warrior lastResult, readable by LDP', () => {
+    // STP.AB stores AA (A-field of src) at p-space index BVal (B-field of dst)
+    // LDP.AB reads from p-space index AA into B-field of dst
+    const warrior = makeWarrior([
+      // 0: STP.AB #42, #0 -- store 42 at p-space index 0 (sets warrior.lastResult)
+      { op: Opcode.STP, mod: Modifier.AB, aMode: AddressMode.IMMEDIATE, aVal: 42, bMode: AddressMode.IMMEDIATE, bVal: 0 },
+      // 1: LDP.AB #0, $1 -- load from p-space index 0 into B-field of cell at offset 1 (= cell 2)
+      { op: Opcode.LDP, mod: Modifier.AB, aMode: AddressMode.IMMEDIATE, aVal: 0, bMode: AddressMode.DIRECT, bVal: 1 },
+      // 2: DAT #0, #0 -- target: will be modified by LDP
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 0, bMode: AddressMode.IMMEDIATE, bVal: 0 },
+      // 3: DAT -- die
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 0, bMode: AddressMode.IMMEDIATE, bVal: 0 },
+    ]);
+    const imp = makeWarrior([IMP_INSTR]);
+    const sim = new Simulator({ coreSize: 100, maxCycles: 10, minSeparation: 20 });
+    sim.loadWarriors([warrior, imp]);
+    sim.setupRound();
+    // Step warrior: execute STP (stores 42 to index 0 -> warrior.lastResult = 42)
+    sim.step();
+    // Step imp
+    sim.step();
+    // Step warrior: execute LDP (reads index 0 -> warrior.lastResult -> 42, writes to cell at pos+2)
+    sim.step();
+    // Check that the DAT at position+2 now has bValue = 42
+    const core = sim.getCore();
+    const pos = sim.getWarriors()[0].position;
+    const cell = core.get((pos + 2) % 100);
+    expect(cell.bValue).toBe(42);
+  });
+});
+
+describe('Tokenizer || operator fix (Bug #4)', () => {
+  it('assembles expressions with || logical OR', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble(`
+      x equ 0||1
+      DAT #x, #0
+    `);
+    expect(result.success).toBe(true);
+    // 0||1 should evaluate to 1
+    expect(result.warrior!.instructions[0].aValue).toBe(1);
+  });
+
+  it('assembles expressions with && logical AND', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble(`
+      x equ 1&&0
+      DAT #x, #0
+    `);
+    expect(result.success).toBe(true);
+    // 1&&0 should evaluate to 0
+    expect(result.warrior!.instructions[0].aValue).toBe(0);
+  });
+
+  it('assembles complex boolean expressions with || and &&', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble(`
+      x equ 0||0||1
+      y equ 1&&1&&1
+      DAT #x, #y
+    `);
+    expect(result.success).toBe(true);
+    expect(result.warrior!.instructions[0].aValue).toBe(1);
+    expect(result.warrior!.instructions[0].bValue).toBe(1);
+  });
+});
+
+describe('ORG/END forward label reference fix (Bug #5)', () => {
+  it('ORG with forward label reference resolves correctly', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble(`
+      ORG start
+      DAT #0, #0
+      start MOV $0, $1
+    `);
+    expect(result.success).toBe(true);
+    // 'start' is the second instruction (index 1), so startOffset should be 1
+    expect(result.warrior!.startOffset).toBe(1);
+  });
+
+  it('END with forward label reference resolves correctly', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble(`
+      DAT #0, #0
+      entry MOV $0, $1
+      END entry
+    `);
+    expect(result.success).toBe(true);
+    expect(result.warrior!.startOffset).toBe(1);
+  });
+});
+
+describe('Assembler error severity and warnings', () => {
+  it('maxLength exceeded is an error, not a warning', () => {
+    const asm = new Assembler({ coreSize: 80, maxLength: 2 });
+    const result = asm.assemble('MOV $0, $1\nDAT #0, #0\nJMP $-2');
+    expect(result.success).toBe(false);
+    expect(result.messages.some(m => m.type === 'ERROR' && m.text.includes('limit'))).toBe(true);
+  });
+
+  it('warns on unclosed FOR block', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble('FOR 3\nDAT #0, #0');
+    expect(result.messages.some(m => m.text.includes('Unclosed FOR'))).toBe(true);
+  });
+
+  it('warns on standalone ROF without FOR', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble('DAT #0, #0\nROF\nMOV $0, $1');
+    expect(result.messages.some(m => m.text.includes('ROF without matching FOR'))).toBe(true);
+  });
+
+  it('warns when ORG offset is outside program bounds', () => {
+    const asm = new Assembler({ coreSize: 8000, maxLength: 100 });
+    const result = asm.assemble('ORG 5\nDAT #0, #0\nMOV $0, $1');
+    expect(result.messages.some(m => m.text.includes('outside program bounds'))).toBe(true);
+  });
+});
+
+describe('RWLIMIT indirect addressing fix (Bugs #2 & #3)', () => {
+  it('A-operand predecrement uses write-folded base for final address', () => {
+    // When readLimit != writeLimit, the A-operand indirect base address
+    // should use foldw (write limit) for predecr/postinc modes
+    const warrior = makeWarrior([
+      // 0: MOV.A {1, $2 -- A-predecrement through cell 1's A-field, write to cell 2
+      { op: Opcode.MOV, mod: Modifier.A, aMode: AddressMode.A_PREDECR, aVal: 1, bMode: AddressMode.DIRECT, bVal: 2 },
+      // 1: DAT #5, #3 -- A-field=5 (pointer), B-field=3
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 5, bMode: AddressMode.IMMEDIATE, bVal: 3 },
+      // 2: DAT #0, #0 -- target
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 0, bMode: AddressMode.IMMEDIATE, bVal: 0 },
+    ]);
+    const imp = makeWarrior([IMP_INSTR]);
+
+    // With limits = 0 (default, no folding), this should work normally
+    const sim = new Simulator({ coreSize: 100, maxCycles: 5, minSeparation: 20 });
+    sim.loadWarriors([warrior, imp]);
+    sim.setupRound();
+    sim.step(); // execute MOV
+    // The predecrement should have decremented cell 1's A-field from 5 to 4
+    const core = sim.getCore();
+    const pos = sim.getWarriors()[0].position;
+    expect(core.get((pos + 1) % 100).aValue).toBe(4);
+  });
+
+  it('B-operand predecrement uses write-folded base for final address', () => {
+    // Similar test for B-operand
+    const warrior = makeWarrior([
+      // 0: MOV.A $1, <2 -- B-predecrement on B-operand through cell 2's B-field
+      { op: Opcode.MOV, mod: Modifier.A, aMode: AddressMode.DIRECT, aVal: 1, bMode: AddressMode.B_PREDECR, bVal: 2 },
+      // 1: DAT #7, #0 -- source A=7
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 7, bMode: AddressMode.IMMEDIATE, bVal: 0 },
+      // 2: DAT #0, #3 -- B-field=3 (pointer)
+      { op: Opcode.DAT, mod: Modifier.F, aMode: AddressMode.IMMEDIATE, aVal: 0, bMode: AddressMode.IMMEDIATE, bVal: 3 },
+    ]);
+    const imp = makeWarrior([IMP_INSTR]);
+
+    const sim = new Simulator({ coreSize: 100, maxCycles: 5, minSeparation: 20 });
+    sim.loadWarriors([warrior, imp]);
+    sim.setupRound();
+    sim.step(); // execute MOV
+    const core = sim.getCore();
+    const pos = sim.getWarriors()[0].position;
+    // Cell 2's B-field should be decremented from 3 to 2
+    expect(core.get((pos + 2) % 100).bValue).toBe(2);
+    // The target cell (pos + 2 + 2 = pos + 4) should have A-value = 7
+    expect(core.get((pos + 4) % 100).aValue).toBe(7);
+  });
+});

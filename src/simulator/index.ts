@@ -239,7 +239,10 @@ export class Simulator {
           }
         }
 
-        addrA = this.foldr(addMod(fieldPtr, addrA, coreSize), progCnt);
+        // C: addrA = foldr(addrA + temp) -- for predecr/postinc, addrA was
+        // set to waddrA (write-folded) before this point (sim.c:454,464)
+        const addrABase = (irAMode !== AddressMode.A_INDIRECT && irAMode !== AddressMode.B_INDIRECT) ? waddrA : addrA;
+        addrA = this.foldr(addMod(fieldPtr, addrABase, coreSize), progCnt);
         AA_Value = this.core.get(addrA).aValue;
         irAValue = this.core.get(addrA).bValue;
 
@@ -310,8 +313,10 @@ export class Simulator {
         }
 
         // Final addresses: write via foldw, read via foldr
+        // C: for predecr/postinc, raddrB was set to addrB (write-folded) at sim.c:568,578
+        const raddrBBase = (irBMode !== AddressMode.A_INDIRECT && irBMode !== AddressMode.B_INDIRECT) ? addrB : raddrB;
         addrB = this.foldw(addMod(fieldPtr, addrB, coreSize), progCnt);
-        raddrB = this.foldr(addMod(fieldPtr, raddrB, coreSize), progCnt);
+        raddrB = this.foldr(addMod(fieldPtr, raddrBBase, coreSize), progCnt);
         AB_Value = this.core.get(raddrB).aValue;
         irBValue = this.core.get(raddrB).bValue;
 
@@ -916,21 +921,29 @@ export class Simulator {
 
   private execSTP(mod: Modifier, _addrA: number, _addrB: number, AA: number, AVal: number, AB: number, BVal: number, w: SimWarrior, _cs: number): void {
     const ps = this.pSpaces[w.pSpaceIndex];
+    // C's set_pspace macro writes to W->lastResult for index 0, not ps->lastResult
+    const pset = (index: number, value: number): void => {
+      if (index % ps.size === 0) {
+        w.lastResult = value;
+      } else {
+        ps.set(index, value);
+      }
+    };
     switch (mod) {
       case Modifier.A:
-        ps.set(AB, AA);
+        pset(AB, AA);
         break;
       case Modifier.B:
       case Modifier.F:
       case Modifier.X:
       case Modifier.I:
-        ps.set(BVal, AVal);
+        pset(BVal, AVal);
         break;
       case Modifier.AB:
-        ps.set(BVal, AA);
+        pset(BVal, AA);
         break;
       case Modifier.BA:
-        ps.set(AB, AVal);
+        pset(AB, AVal);
         break;
     }
   }

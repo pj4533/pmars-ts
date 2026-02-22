@@ -61,6 +61,10 @@ export class Assembler {
     let pin: number | null = null;
     let orgOffset = 0;
     let endOffset: number | null = null;
+    // Deferred ORG/END/PIN expressions for pass 2 resolution (supports forward label refs)
+    let orgExprDeferred: { expr: string; lineNum: number } | null = null;
+    let endExprDeferred: { expr: string; lineNum: number } | null = null;
+    let pinExprDeferred: { expr: string; lineNum: number } | null = null;
 
     const labels: Map<string, Label> = new Map();
     const instructions: { line: number; text: string; rawLine: string }[] = [];
@@ -241,7 +245,7 @@ export class Assembler {
       // Check for label(s) - support multiple labels per instruction (up to 7 like C's GRPMAX)
       while (tokenIdx < tokens.length) {
         const tok = tokens[tokenIdx].toUpperCase();
-        if (this.isOpcode(tok) || tok === 'EQU' || tok === 'FOR' || tok === 'END' || tok === 'ORG' || tok === 'PIN') {
+        if (this.isOpcode(tok) || tok === 'EQU' || tok === 'FOR' || tok === 'ROF' || tok === 'END' || tok === 'ORG' || tok === 'PIN') {
           break;
         }
         // It's a label
@@ -291,6 +295,12 @@ export class Assembler {
 
       lastEquLabel = null;
 
+      // FORERR: standalone ROF without FOR (matches C asm.c:2964)
+      if (opToken === 'ROF') {
+        messages.push({ type: 'WARNING', line: lineNum + 1, text: 'ROF without matching FOR' });
+        continue;
+      }
+
       if (opToken === 'FOR') {
         const countExpr = tokens.slice(tokenIdx + 1).join(' ');
         const substituted = this.substituteEqus(countExpr, equDefs, predefined);
@@ -303,37 +313,24 @@ export class Assembler {
 
       if (opToken === 'ORG') {
         const offsetExpr = tokens.slice(tokenIdx + 1).join(' ');
-        // Issue #10: Use absolute label values for ORG
-        const substituted = this.substituteLabelsAndEqusAbsolute(offsetExpr, labels, equDefs, predefined);
-        const evalResult = this.evaluator.evaluate(substituted);
-        if (evalResult.ok) orgOffset = evalResult.value;
+        // Defer evaluation to pass 2 so forward label references work (matches C's encode())
+        orgExprDeferred = { expr: offsetExpr, lineNum: lineNum + 1 };
         continue;
       }
 
       if (opToken === 'END') {
         const offsetExpr = tokens.slice(tokenIdx + 1).join(' ');
         if (offsetExpr.trim()) {
-          // Issue #10: Use absolute label values for END
-          const substituted = this.substituteLabelsAndEqusAbsolute(offsetExpr, labels, equDefs, predefined);
-          const evalResult = this.evaluator.evaluate(substituted);
-          if (evalResult.ok && evalResult.value !== 0) {
-            if (orgOffset !== 0) {
-              // DOEERR: END offset ignored when ORG already set
-              messages.push({ type: 'WARNING', line: lineNum + 1, text: 'END offset ignored, ORG already set' });
-            } else {
-              endOffset = evalResult.value;
-            }
-          }
+          // Defer evaluation to pass 2 so forward label references work
+          endExprDeferred = { expr: offsetExpr, lineNum: lineNum + 1 };
         }
         break; // Stop processing after END
       }
 
       if (opToken === 'PIN') {
         const pinExpr = tokens.slice(tokenIdx + 1).join(' ');
-        // Issue #10: Use absolute label values for PIN
-        const substituted = this.substituteLabelsAndEqusAbsolute(pinExpr, labels, equDefs, predefined);
-        const evalResult = this.evaluator.evaluate(substituted);
-        if (evalResult.ok) pin = evalResult.value;
+        // Defer evaluation to pass 2 so forward label references work
+        pinExprDeferred = { expr: pinExpr, lineNum: lineNum + 1 };
         continue;
       }
 
@@ -346,6 +343,35 @@ export class Assembler {
       const instrText = tokens.slice(tokenIdx).join(' ');
       instructions.push({ line: lineNum + 1, text: instrText, rawLine });
       instrCount++;
+    }
+
+    // Resolve deferred ORG/END/PIN now that all labels are known (pass 2 timing, matches C)
+    if (orgExprDeferred) {
+      const substituted = this.substituteLabelsAndEqusAbsolute(orgExprDeferred.expr, labels, equDefs, predefined);
+      const evalResult = this.evaluator.evaluate(substituted);
+      if (evalResult.ok) orgOffset = evalResult.value;
+    }
+    if (endExprDeferred) {
+      const substituted = this.substituteLabelsAndEqusAbsolute(endExprDeferred.expr, labels, equDefs, predefined);
+      const evalResult = this.evaluator.evaluate(substituted);
+      if (evalResult.ok && evalResult.value !== 0) {
+        if (orgOffset !== 0 && orgExprDeferred) {
+          // DOEERR: END offset ignored when ORG already set
+          messages.push({ type: 'WARNING', line: endExprDeferred.lineNum, text: 'END offset ignored, ORG already set' });
+        } else if (orgOffset === 0) {
+          endOffset = evalResult.value;
+        }
+      }
+    }
+    if (pinExprDeferred) {
+      const substituted = this.substituteLabelsAndEqusAbsolute(pinExprDeferred.expr, labels, equDefs, predefined);
+      const evalResult = this.evaluator.evaluate(substituted);
+      if (evalResult.ok) pin = evalResult.value;
+    }
+
+    // ROFERR: unclosed FOR/ROF (matches C asm.c:1639)
+    if (forBuffer) {
+      messages.push({ type: 'WARNING', line: 0, text: 'Unclosed FOR block (missing ROF)' });
     }
 
     if (endOffset !== null && orgOffset === 0) {
@@ -368,7 +394,8 @@ export class Assembler {
     }
 
     if (finalInstrCount > opts.maxLength) {
-      messages.push({ type: 'WARNING', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${opts.maxLength}` });
+      // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)
+      messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${opts.maxLength}` });
     }
 
     // Rebuild labels with correct instruction indices after multi-line EQU expansion
@@ -391,6 +418,10 @@ export class Assembler {
       return { success: false, warrior: null, messages };
     }
 
+    // OFSERR: validate offset is within program bounds (matches C asm.c:1560-1562)
+    if (orgOffset < 0 || orgOffset >= finalInstrCount) {
+      messages.push({ type: 'WARNING', line: 0, text: `ORG/END offset ${orgOffset} is outside program bounds (0-${finalInstrCount - 1})` });
+    }
     const startOffset = normalize(orgOffset, opts.coreSize);
 
     return {
@@ -912,8 +943,20 @@ export class Assembler {
         continue;
       }
 
+      // Multi-character operators: || and &&
+      if (ch === '|' && i + 1 < line.length && line[i + 1] === '|') {
+        tokens.push('||');
+        i += 2;
+        continue;
+      }
+      if (ch === '&' && i + 1 < line.length && line[i + 1] === '&') {
+        tokens.push('&&');
+        i += 2;
+        continue;
+      }
+
       // Expression characters
-      if ('()+-/%!= '.includes(ch)) {
+      if ('()+-/%!=|& '.includes(ch)) {
         token = ch;
         i++;
         tokens.push(token);
