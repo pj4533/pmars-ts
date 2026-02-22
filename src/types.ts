@@ -71,6 +71,8 @@ export interface SimulatorOptions {
   pSpaceSize: number;
   warriors: number;
   seed: number | null;
+  fixedSeries: boolean;
+  fixedPosition: number | null;
 }
 
 export interface WarriorState {
@@ -100,6 +102,8 @@ export const DEFAULT_OPTIONS: SimulatorOptions = {
   pSpaceSize: 0,
   warriors: 2,
   seed: null,
+  fixedSeries: false,
+  fixedPosition: null,
 };
 
 export const OPCODE_NAMES: readonly string[] = [

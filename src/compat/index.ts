@@ -57,6 +57,15 @@ function instructionToCompat(inst: Instruction, address: number): IInstruction {
   };
 }
 
+/** Remove undefined values so they don't override DEFAULT_OPTIONS during spread */
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) result[key] = value;
+  }
+  return result as Partial<T>;
+}
+
 class CorewarCompat {
   private simulator: Simulator | null = null;
   private assembler = new Assembler();
@@ -104,14 +113,24 @@ class CorewarCompat {
     this.messageProvider = messageProvider || null;
     this.warriorData = [];
 
-    // Update assembler with new options
-    this.assembler = new Assembler({
+    // Build simulator options, filtering undefined to preserve DEFAULT_OPTIONS
+    const simOpts = stripUndefined({
       coreSize: options.coresize,
       maxCycles: options.maximumCycles,
       maxLength: options.instructionLimit,
       maxProcesses: options.maxTasks,
       minSeparation: options.minSeparation,
+      readLimit: options.readLimit,
+      writeLimit: options.writeLimit,
+      pSpaceSize: options.pSpaceSize,
+      seed: options.seed,
+      rounds: options.rounds,
+      fixedSeries: options.fixedSeries,
+      fixedPosition: options.fixedPosition,
     });
+
+    // Update assembler with new options
+    this.assembler = new Assembler(simOpts);
 
     for (const w of warriors) {
       if (w.source.success) {
@@ -129,13 +148,7 @@ class CorewarCompat {
       }
     }
 
-    this.simulator = new Simulator({
-      coreSize: options.coresize,
-      maxCycles: options.maximumCycles,
-      maxLength: options.instructionLimit,
-      maxProcesses: options.maxTasks,
-      minSeparation: options.minSeparation,
-    });
+    this.simulator = new Simulator(simOpts);
 
     this.simulator.loadWarriors(this.warriorData);
 
@@ -261,7 +274,7 @@ class CorewarCompat {
       hillResults.warriors.push({
         warrior: warriors[i],
         rank: 0,
-        score: totalWon * 3 + totalDrawn,
+        score: rules.scoreFormula?.(totalWon, totalLost, totalDrawn, warriors.length) ?? (totalWon * 3 + totalDrawn),
         won: totalWon,
         drawn: totalDrawn,
         lost: totalLost,

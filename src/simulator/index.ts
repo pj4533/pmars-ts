@@ -67,16 +67,34 @@ export class Simulator {
   }
 
   loadWarriors(warriors: WarriorData[]): void {
+    // MAXWARRIOR validation (matches C's global.h MAXWARRIOR=36)
+    if (warriors.length > 36) {
+      throw new Error('Maximum 36 warriors supported');
+    }
+
+    // Validate fixedSeries and fixedPosition are mutually exclusive (matches C clparse.c:577-580)
+    if (this.options.fixedSeries && this.options.fixedPosition != null) {
+      throw new Error('fixedSeries and fixedPosition are mutually exclusive');
+    }
+
     this.warriorData = warriors;
     const coreSize = this.options.coreSize;
 
     // Validate and auto-adjust configuration (matches C's clparse.c validation)
-    if (this.options.minSeparation < this.options.maxLength) {
+    // Handle separation=0: set to maxLength (matches C clparse.c:582-583)
+    if (this.options.minSeparation === 0) {
+      this.options.minSeparation = this.options.maxLength;
+    } else if (this.options.minSeparation < this.options.maxLength) {
       this.options.minSeparation = this.options.maxLength;
     }
     // If separation is too large for the core, reduce it to fit
     if (warriors.length > 1 && coreSize < warriors.length * this.options.minSeparation) {
       this.options.minSeparation = Math.floor(coreSize / warriors.length);
+    }
+
+    // Validate fixedPosition >= separation (matches C clparse.c:603-606)
+    if (this.options.fixedPosition != null && this.options.fixedPosition < this.options.minSeparation) {
+      throw new Error(`fixedPosition (${this.options.fixedPosition}) must be >= minSeparation (${this.options.minSeparation})`);
     }
     this.warriors = warriors.map((w, i) =>
       new SimWarrior(i, w, this.options.maxProcesses, warriors.length, coreSize)
@@ -128,8 +146,16 @@ export class Simulator {
     this.roundNum++;
 
     // Position warriors
-    if (this.seed === 0) {
-      this.seed = this.options.seed ?? this.checksumWarriors();
+    if (this.options.fixedPosition != null) {
+      // -F flag: use explicit fixed position, skip rng (matches C sim.c:328-329)
+      this.seed = this.options.fixedPosition - this.options.minSeparation;
+    } else if (this.seed === 0) {
+      if (this.options.fixedSeries) {
+        // -f flag: seed from warrior checksums specifically
+        this.seed = this.checksumWarriors();
+      } else {
+        this.seed = this.options.seed ?? this.checksumWarriors();
+      }
       this.seed = rng(this.seed);
     }
 

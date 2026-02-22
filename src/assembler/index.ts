@@ -219,6 +219,11 @@ export class Assembler {
                 instrCount++;
               }
             }
+            // Clean up FOR counter variable (matches C's asm.c:1643-1652)
+            if (forBuffer.label) {
+              equDefs.delete(forBuffer.label);
+              forCounterNames.delete(forBuffer.label);
+            }
             forBuffer = null;
             lastEquLabel = null;
             continue;
@@ -393,9 +398,11 @@ export class Assembler {
       return { success: false, warrior: null, messages };
     }
 
-    if (finalInstrCount > opts.maxLength) {
+    // MAXINSTR hard limit of 1000 (matches C's global.h MAXINSTR=1000)
+    const effectiveMaxLength = Math.min(opts.maxLength, 1000);
+    if (finalInstrCount > effectiveMaxLength) {
       // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)
-      messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${opts.maxLength}` });
+      messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${effectiveMaxLength}` });
     }
 
     // Rebuild labels with correct instruction indices after multi-line EQU expansion

@@ -62,6 +62,13 @@ export interface IOptions {
   maxTasks?: number;
   minSeparation?: number;
   standard?: number;
+  readLimit?: number;
+  writeLimit?: number;
+  pSpaceSize?: number;
+  seed?: number | null;
+  rounds?: number;
+  fixedSeries?: boolean;
+  fixedPosition?: number | null;
 }
 
 export interface IMetaData {
@@ -148,6 +155,7 @@ export interface ICoreLocation {
 export interface IRules {
   rounds: number;
   options: IOptions;
+  scoreFormula?: (wins: number, losses: number, draws: number, numWarriors: number) => number;
 }
 
 export interface IMatchWarrior {
