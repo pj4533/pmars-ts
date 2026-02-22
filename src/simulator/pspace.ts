@@ -1,5 +1,7 @@
+import { MAX_PSPACE_DIVISOR } from '../constants.js';
+
 export function computePSpaceSize(coreSize: number): number {
-  for (let i = 16; i >= 1; i--) {
+  for (let i = MAX_PSPACE_DIVISOR; i >= 1; i--) {
     if (coreSize % i === 0) return Math.floor(coreSize / i);
   }
   return coreSize; // fallback
@@ -17,13 +19,13 @@ export class PSpace {
   }
 
   get(index: number): number {
-    const idx = index % this.size;
+    const idx = ((index % this.size) + this.size) % this.size;
     if (idx === 0) return this.lastResult;
     return this.space[idx];
   }
 
   set(index: number, value: number): void {
-    const idx = index % this.size;
+    const idx = ((index % this.size) + this.size) % this.size;
     if (idx === 0) {
       this.lastResult = value;
     } else {
@@ -33,6 +35,7 @@ export class PSpace {
 
   clear(): void {
     this.space.fill(0);
+    this.lastResult = 0;
   }
 
   clearKeepResult(): void {

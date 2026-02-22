@@ -18,11 +18,11 @@ export class Core {
   }
 
   get(addr: number): Instruction {
-    return this.memory[((addr % this.size) + this.size) % this.size];
+    return this.memory[this.wrap(addr)];
   }
 
   set(addr: number, inst: Instruction): void {
-    this.memory[((addr % this.size) + this.size) % this.size] = inst;
+    this.memory[this.wrap(addr)] = inst;
   }
 
   copyFrom(src: number, dst: number): void {

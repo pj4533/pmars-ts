@@ -39,8 +39,8 @@ const MODIFIER_MAP: Record<string, ModifierType> = {
 
 function instructionToCompat(inst: Instruction, address: number): IInstruction {
   const { opcode, modifier } = decodeOpcode(inst.opcode);
-  const opName = OPCODE_NAMES[opcode] || 'DAT';
-  const modName = MODIFIER_NAMES[modifier] || 'F';
+  const opName = OPCODE_NAMES[opcode];
+  const modName = MODIFIER_NAMES[modifier];
 
   return {
     address,
@@ -235,7 +235,7 @@ class CorewarCompat {
     for (let r = 0; r < rules.rounds; r++) {
       this.initialiseSimulator(rules.options, warriors, messageProvider);
       const result = this.run();
-      if (result.winnerId !== undefined && result.winnerId !== null) {
+      if (result.winnerId !== undefined) {
         results[result.winnerId].won++;
         for (let j = 0; j < warriors.length; j++) {
           if (j !== result.winnerId) results[j].lost++;

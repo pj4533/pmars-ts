@@ -122,7 +122,7 @@ export interface IParseResult {
 
 export interface IWarrior {
   source: IParseResult;
-  data?: unknown;
+  data?: string;
 }
 
 export interface IPublishProvider {
@@ -132,7 +132,7 @@ export interface IPublishProvider {
 export interface IRoundResult {
   winnerId?: number;
   winnerData?: unknown;
-  outcome: string;
+  outcome: 'WIN' | 'TIE';
 }
 
 export enum CoreAccessType {

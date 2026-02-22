@@ -1,5 +1,6 @@
 import { CircularQueue } from '../utils/circular-queue.js';
 import { type WarriorData, type WarriorState } from '../types.js';
+import { normalize } from '../utils/modular-arithmetic.js';
 
 export class SimWarrior {
   id: number;
@@ -33,8 +34,7 @@ export class SimWarrior {
   reset(position: number, coreSize: number): void {
     this.processQueue.clear();
     this.position = position;
-    const startAddr = (position + this.startOffset) % coreSize;
-    this.processQueue.push(startAddr < 0 ? startAddr + coreSize : startAddr);
+    this.processQueue.push(normalize(position + this.startOffset, coreSize));
     this.tasks = 1;
     this.alive = true;
   }

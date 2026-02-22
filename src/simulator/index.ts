@@ -1,5 +1,5 @@
 import { type Instruction, type WarriorData, type SimulatorOptions, DEFAULT_OPTIONS, Opcode, Modifier, AddressMode } from '../types.js';
-import { encodeOpcode, decodeOpcode, INITIAL_INSTRUCTION } from '../constants.js';
+import { encodeOpcode, decodeOpcode, INITIAL_INSTRUCTION, MAX_WARRIORS } from '../constants.js';
 import { Core } from './core.js';
 import { SimWarrior } from './warrior.js';
 import { PSpace, computePSpaceSize } from './pspace.js';
@@ -68,8 +68,8 @@ export class Simulator {
 
   loadWarriors(warriors: WarriorData[]): void {
     // MAXWARRIOR validation (matches C's global.h MAXWARRIOR=36)
-    if (warriors.length > 36) {
-      throw new Error('Maximum 36 warriors supported');
+    if (warriors.length > MAX_WARRIORS) {
+      throw new Error(`Maximum ${MAX_WARRIORS} warriors supported`);
     }
 
     // Validate fixedSeries and fixedPosition are mutually exclusive (matches C clparse.c:577-580)
@@ -81,12 +81,8 @@ export class Simulator {
     const coreSize = this.options.coreSize;
 
     // Validate and auto-adjust configuration (matches C's clparse.c validation)
-    // Handle separation=0: set to maxLength (matches C clparse.c:582-583)
-    if (this.options.minSeparation === 0) {
-      this.options.minSeparation = this.options.maxLength;
-    } else if (this.options.minSeparation < this.options.maxLength) {
-      this.options.minSeparation = this.options.maxLength;
-    }
+    // Ensure minSeparation >= maxLength (matches C clparse.c:582-583)
+    this.options.minSeparation = Math.max(this.options.minSeparation, this.options.maxLength);
     // If separation is too large for the core, reduce it to fit
     if (warriors.length > 1 && coreSize < warriors.length * this.options.minSeparation) {
       this.options.minSeparation = Math.floor(coreSize / warriors.length);
@@ -220,7 +216,7 @@ export class Simulator {
     let irAValue = ir.aValue;
     let irBValue = ir.bValue;
 
-    this.coreAccessEvents = [];
+    this.coreAccessEvents.length = 0;
     this.emitCoreAccess(w.id, progCnt, 'EXECUTE');
 
     // --- Evaluate A operand ---
@@ -492,8 +488,6 @@ export class Simulator {
 
     if (pushNext && !died) {
       w.pushProcess(nextAddr);
-    } else if (!died && !pushNext) {
-      // Already pushed in JMP/JMZ/JMN/DJN/SPL
     }
 
     // Emit events
@@ -550,11 +544,11 @@ export class Simulator {
     let shuffle = 0;
     for (const wd of this.warriorData) {
       for (const inst of wd.instructions) {
-        checksum += (inst.opcode ^ shuffle++);
-        checksum += (inst.aMode ^ shuffle++);
-        checksum += (inst.bMode ^ shuffle++);
-        checksum += (inst.aValue ^ shuffle++);
-        checksum += (inst.bValue ^ shuffle++);
+        checksum = (checksum + (inst.opcode ^ shuffle++)) | 0;
+        checksum = (checksum + (inst.aMode ^ shuffle++)) | 0;
+        checksum = (checksum + (inst.bMode ^ shuffle++)) | 0;
+        checksum = (checksum + (inst.aValue ^ shuffle++)) | 0;
+        checksum = (checksum + (inst.bValue ^ shuffle++)) | 0;
       }
     }
     return checksum;
@@ -832,6 +826,7 @@ export class Simulator {
       case Modifier.X:
       case Modifier.I:
         return AB === 0 && BVal === 0;
+      default: { const _exhaustive: never = mod; throw new Error(`Unexpected modifier: ${_exhaustive}`); }
     }
   }
 
@@ -847,6 +842,7 @@ export class Simulator {
       case Modifier.X:
       case Modifier.I:
         return AB !== 0 || BVal !== 0;
+      default: { const _exhaustive: never = mod; throw new Error(`Unexpected modifier: ${_exhaustive}`); }
     }
   }
 
@@ -877,6 +873,7 @@ export class Simulator {
         this.emitCoreAccess(wid, addrB, 'WRITE');
         return !(AB === 1 && BVal === 1);
       }
+      default: { const _exhaustive: never = mod; throw new Error(`Unexpected modifier: ${_exhaustive}`); }
     }
   }
 
@@ -900,6 +897,7 @@ export class Simulator {
         return a.opcode === b.opcode && a.aMode === b.aMode && a.bMode === b.bMode &&
                AA === AB && AVal === BVal;
       }
+      default: { const _exhaustive: never = mod; throw new Error(`Unexpected modifier: ${_exhaustive}`); }
     }
   }
 
@@ -918,6 +916,7 @@ export class Simulator {
         return AA < AB && AVal < BVal;
       case Modifier.X:
         return AA < BVal && AVal < AB;
+      default: { const _exhaustive: never = mod; throw new Error(`Unexpected modifier: ${_exhaustive}`); }
     }
   }
 

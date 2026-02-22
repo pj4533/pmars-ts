@@ -1,5 +1,5 @@
 import { type Instruction, type WarriorData, type SimulatorOptions, DEFAULT_OPTIONS, Opcode, Modifier, AddressMode, OPCODE_NAMES, MODIFIER_NAMES, ADDRESS_MODE_SYMBOLS } from '../types.js';
-import { encodeOpcode, decodeOpcode } from '../constants.js';
+import { encodeOpcode, decodeOpcode, MAX_INSTRUCTIONS } from '../constants.js';
 import { ExpressionEvaluator } from './expression.js';
 import { normalize } from '../utils/modular-arithmetic.js';
 import { computePSpaceSize } from '../simulator/pspace.js';
@@ -44,7 +44,6 @@ export class Assembler {
       // Strip trailing comment to check for backslash
       const commentPos = rawLine.indexOf(';');
       const beforeComment = commentPos >= 0 ? rawLine.substring(0, commentPos) : rawLine;
-      const afterComment = commentPos >= 0 ? rawLine.substring(commentPos) : '';
       if (beforeComment.trimEnd().endsWith('\\')) {
         // Remove the backslash and accumulate
         continuation += beforeComment.trimEnd().slice(0, -1);
@@ -310,7 +309,7 @@ export class Assembler {
         const countExpr = tokens.slice(tokenIdx + 1).join(' ');
         const substituted = this.substituteEqus(countExpr, equDefs, predefined);
         const evalResult = this.evaluator.evaluate(substituted);
-        const count = evalResult.ok ? evalResult.value : 0;
+        const count = (evalResult.ok ? evalResult.value : 0) & 0xFFFF;
         forBuffer = { label: labelName, count, lines: [] };
         forDepth = 1;
         continue;
@@ -398,8 +397,8 @@ export class Assembler {
       return { success: false, warrior: null, messages };
     }
 
-    // MAXINSTR hard limit of 1000 (matches C's global.h MAXINSTR=1000)
-    const effectiveMaxLength = Math.min(opts.maxLength, 1000);
+    // MAXINSTR hard limit (matches C's global.h MAXINSTR=1000)
+    const effectiveMaxLength = Math.min(opts.maxLength, MAX_INSTRUCTIONS);
     if (finalInstrCount > effectiveMaxLength) {
       // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)
       messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${effectiveMaxLength}` });
@@ -493,7 +492,7 @@ export class Assembler {
       }
     }
 
-    const opcodeIdx = OPCODE_NAMES.indexOf(opcodeStr);
+    const opcodeIdx = (OPCODE_NAMES as readonly string[]).indexOf(opcodeStr);
     if (opcodeIdx < 0) {
       messages.push({ type: 'ERROR', line: lineNum, text: `Unknown opcode: ${opcodeStr}` });
       return null;
@@ -546,7 +545,7 @@ export class Assembler {
     // Determine default modifier if not specified
     let modifier: Modifier;
     if (modifierStr) {
-      const modIdx = MODIFIER_NAMES.indexOf(modifierStr);
+      const modIdx = (MODIFIER_NAMES as readonly string[]).indexOf(modifierStr);
       if (modIdx < 0) {
         messages.push({ type: 'ERROR', line: lineNum, text: `Unknown modifier: ${modifierStr}` });
         return null;
@@ -600,7 +599,7 @@ export class Assembler {
     if (text.length === 0) return { mode: AddressMode.DIRECT, expr: '0' };
 
     const modeChar = text[0];
-    const modeIdx = ADDRESS_MODE_SYMBOLS.indexOf(modeChar);
+    const modeIdx = (ADDRESS_MODE_SYMBOLS as readonly string[]).indexOf(modeChar);
     if (modeIdx >= 0) {
       return { mode: modeIdx as AddressMode, expr: text.substring(1).trim() };
     }
@@ -673,15 +672,17 @@ export class Assembler {
       const upper = match.toUpperCase();
 
       // Check predefined
-      if (predefined.has(upper)) {
-        return String(predefined.get(upper));
+      const preVal = predefined.get(upper);
+      if (preVal !== undefined) {
+        return String(preVal);
       }
 
       // Issue #8: cycle detection
       const cycleSet = visited ?? new Set<string>();
 
       // Check EQU
-      if (equDefs.has(upper)) {
+      const equVal = equDefs.get(upper);
+      if (equVal !== undefined) {
         if (cycleSet.has(upper)) {
           // Cycle detected
           if (messages) {
@@ -691,14 +692,13 @@ export class Assembler {
         }
         const newVisited = new Set(cycleSet);
         newVisited.add(upper);
-        const equVal = equDefs.get(upper)!;
         // Recursively substitute
         return this.substituteLabelsAndEqus(equVal, instrIdx, _totalInstr, labels, equDefs, predefined, messages, lineNum, newVisited);
       }
 
       // Check labels
-      if (labels.has(upper)) {
-        const label = labels.get(upper)!;
+      const label = labels.get(upper);
+      if (label !== undefined) {
         if (label.isEqu && label.equText) {
           if (cycleSet.has(upper)) {
             if (messages) {
@@ -732,22 +732,33 @@ export class Assembler {
     labels: Map<string, Label>,
     equDefs: Map<string, string>,
     predefined: Map<string, number>,
+    visited?: Set<string>,
   ): string {
     return expr.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (match) => {
       const upper = match.toUpperCase();
 
-      if (predefined.has(upper)) {
-        return String(predefined.get(upper));
+      const preVal = predefined.get(upper);
+      if (preVal !== undefined) {
+        return String(preVal);
       }
 
-      if (equDefs.has(upper)) {
-        return this.substituteLabelsAndEqusAbsolute(equDefs.get(upper)!, labels, equDefs, predefined);
+      const cycleSet = visited ?? new Set<string>();
+
+      const equVal = equDefs.get(upper);
+      if (equVal !== undefined) {
+        if (cycleSet.has(upper)) return '0';
+        const newVisited = new Set(cycleSet);
+        newVisited.add(upper);
+        return this.substituteLabelsAndEqusAbsolute(equVal, labels, equDefs, predefined, newVisited);
       }
 
-      if (labels.has(upper)) {
-        const label = labels.get(upper)!;
+      const label = labels.get(upper);
+      if (label !== undefined) {
         if (label.isEqu && label.equText) {
-          return this.substituteLabelsAndEqusAbsolute(label.equText, labels, equDefs, predefined);
+          if (cycleSet.has(upper)) return '0';
+          const newVisited = new Set(cycleSet);
+          newVisited.add(upper);
+          return this.substituteLabelsAndEqusAbsolute(label.equText, labels, equDefs, predefined, newVisited);
         }
         // Use absolute value (not relative)
         return String(label.value);
@@ -843,7 +854,7 @@ export class Assembler {
         const countExpr = tokens.slice(tokenIdx + 1).join(' ');
         const substituted = this.substituteEqus(countExpr, equDefs, predefined);
         const evalResult = this.evaluator.evaluate(substituted);
-        const count = evalResult.ok ? evalResult.value : 0;
+        const count = (evalResult.ok ? evalResult.value : 0) & 0xFFFF;
 
         // Collect inner FOR body
         let depth = 1;
@@ -993,7 +1004,7 @@ export class Assembler {
   }
 
   private isOpcode(token: string): boolean {
-    return OPCODE_NAMES.includes(token) || token.includes('.') && OPCODE_NAMES.includes(token.split('.')[0]);
+    return (OPCODE_NAMES as readonly string[]).includes(token) || (token.includes('.') && (OPCODE_NAMES as readonly string[]).includes(token.split('.')[0]));
   }
 }
 

@@ -28,10 +28,13 @@ export function createInstruction(
   };
 }
 
-export const INITIAL_INSTRUCTION: Instruction = createInstruction(
+export const INITIAL_INSTRUCTION: Readonly<Instruction> = Object.freeze(createInstruction(
   Opcode.DAT, Modifier.F,
   AddressMode.DIRECT, 0,
   AddressMode.DIRECT, 0,
-);
+));
 
 export const PMARS_VERSION = 96;
+export const MAX_WARRIORS = 36;
+export const MAX_INSTRUCTIONS = 1000;
+export const MAX_PSPACE_DIVISOR = 16;

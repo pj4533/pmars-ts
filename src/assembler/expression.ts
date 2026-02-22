@@ -21,6 +21,8 @@ function isTerminal(ch: string): boolean {
 
 export type EvalResult = { ok: true; value: number; overflow: boolean } | { ok: false; error: 'BAD_EXPR' | 'DIV_ZERO' };
 
+const MAX_EXPR_DEPTH = 256;
+
 export class ExpressionEvaluator {
   private registers: number[] = new Array(26).fill(0);
   private saveOper = 0;
@@ -40,7 +42,7 @@ export class ExpressionEvaluator {
     this.saveOper = 0;
 
     const ctx = { pos: 0, src: expr.trim() };
-    const result = this.evalExpr(ctx, -1, 0, IDENT);
+    const result = this.evalExpr(ctx, -1, 0, IDENT, 0);
 
     this.skipSpace(ctx);
     if (ctx.pos < ctx.src.length) {
@@ -58,9 +60,13 @@ export class ExpressionEvaluator {
     return { ok: true, value: result, overflow: false };
   }
 
-  private evalExpr(ctx: { pos: number; src: string }, prevPrec: number, val1: number, oper1: number): number {
+  private evalExpr(ctx: { pos: number; src: string }, prevPrec: number, val1: number, oper1: number, depth: number): number {
+    if (depth > MAX_EXPR_DEPTH) {
+      this.error = 'BAD_EXPR';
+      return 0;
+    }
     this.saveOper = 0;
-    const val2 = this.getVal(ctx);
+    const val2 = this.getVal(ctx, depth);
 
     this.skipSpace(ctx);
     if (isTerminal(ctx.src[ctx.pos])) {
@@ -73,30 +79,34 @@ export class ExpressionEvaluator {
 
     if (prec1 >= prec2) {
       if (prec2 > prevPrec) {
-        return this.evalExpr(ctx, prevPrec, this.calc(val1, val2, oper1), oper2);
+        return this.evalExpr(ctx, prevPrec, this.calc(val1, val2, oper1), oper2, depth + 1);
       } else {
         this.saveOper = oper2;
         return this.calc(val1, val2, oper1);
       }
     } else {
-      const result2 = this.evalExpr(ctx, prec1, val2, oper2);
+      const result2 = this.evalExpr(ctx, prec1, val2, oper2, depth + 1);
       let result = this.calc(val1, result2, oper1);
 
       if (this.saveOper && precedence(this.saveOper) >= prevPrec) {
-        result = this.evalExpr(ctx, prevPrec, result, this.saveOper);
+        result = this.evalExpr(ctx, prevPrec, result, this.saveOper, depth + 1);
       }
 
       return result;
     }
   }
 
-  private getVal(ctx: { pos: number; src: string }): number {
+  private getVal(ctx: { pos: number; src: string }, depth: number): number {
+    if (depth > MAX_EXPR_DEPTH) {
+      this.error = 'BAD_EXPR';
+      return 0;
+    }
     this.skipSpace(ctx);
     const ch = ctx.src[ctx.pos];
 
     if (ch === '(') {
       ctx.pos++;
-      const val = this.evalExpr(ctx, -1, 0, IDENT);
+      const val = this.evalExpr(ctx, -1, 0, IDENT, depth + 1);
       if (ctx.src[ctx.pos] !== ')') {
         this.error = 'BAD_EXPR';
       }
@@ -106,18 +116,18 @@ export class ExpressionEvaluator {
 
     if (ch === '-') {
       ctx.pos++;
-      return -this.getVal(ctx);
+      return -this.getVal(ctx, depth + 1);
     }
 
     if (ch === '!') {
       ctx.pos++;
-      const v = this.getVal(ctx);
+      const v = this.getVal(ctx, depth + 1);
       return v ? 0 : 1;
     }
 
     if (ch === '+') {
       ctx.pos++;
-      return this.getVal(ctx);
+      return this.getVal(ctx, depth + 1);
     }
 
     const upper = ch?.toUpperCase();
@@ -127,7 +137,7 @@ export class ExpressionEvaluator {
       this.skipSpace(ctx);
       if (ctx.src[ctx.pos] === '=' && ctx.src[ctx.pos + 1] !== '=') {
         ctx.pos++;
-        const val = this.evalExpr(ctx, -1, 0, IDENT);
+        const val = this.evalExpr(ctx, -1, 0, IDENT, depth + 1);
         this.registers[regId] = val;
         return val;
       }
@@ -136,7 +146,7 @@ export class ExpressionEvaluator {
 
     // Parse number
     let numStr = '';
-    while (ctx.pos < ctx.src.length && ctx.src[ctx.pos] >= '0' && ctx.src[ctx.pos] <= '9') {
+    while (ctx.pos < ctx.src.length && ctx.src[ctx.pos] >= '0' && ctx.src[ctx.pos] <= '9' && numStr.length < 20) {
       numStr += ctx.src[ctx.pos];
       ctx.pos++;
     }

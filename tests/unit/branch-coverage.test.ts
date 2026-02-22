@@ -96,31 +96,51 @@ describe('DIV/MOD partial zero in F/X', () => {
     // DIV.F: divide both fields. If A-field of src is 0, should kill
     const { warriors } = runOneCycle('DIV.F $1, $2\nDAT #0, #3\nDAT #10, #20');
     // Zero in A-field of source should kill the warrior
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('DIV.X with zero in B-field of src kills', () => {
     const { warriors } = runOneCycle('DIV.X $1, $2\nDAT #3, #0\nDAT #10, #20');
+    // DIV.X: dstA /= srcB, dstB /= srcA. srcB=0 causes divide by zero
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('MOD.F with zero in A-field of src kills', () => {
     const { warriors } = runOneCycle('MOD.F $1, $2\nDAT #0, #3\nDAT #10, #20');
+    // MOD.F: modulo both fields. A-field of src is 0, causes divide by zero
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('MOD.X with zero in A-field of src kills', () => {
     const { warriors } = runOneCycle('MOD.X $1, $2\nDAT #0, #3\nDAT #10, #20');
+    // MOD.X: cross-modulo. srcA=0 causes divide by zero on dstB
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('MOD.X with zero in B-field of src, nonzero A-field', () => {
     const { core, warriors } = runOneCycle('MOD.X $1, $2\nDAT #3, #0\nDAT #10, #20');
+    // MOD.X: dstA %= srcB (0), dstB %= srcA (3). srcB=0 causes divide by zero on dstA
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('DIV.F with nonzero A, zero B kills', () => {
     const { warriors } = runOneCycle('DIV.F $1, $2\nDAT #3, #0\nDAT #10, #20');
+    // DIV.F: both fields divided. B-field of src is 0, causes divide by zero
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 
   it('DIV.X with nonzero A, zero B kills on second', () => {
     // DIV.X: dstA /= srcB, dstB /= srcA. If srcA (AA) is 0 but srcB (AVal) is nonzero
     const { warriors } = runOneCycle('DIV.X $1, $2\nDAT #0, #3\nDAT #10, #20');
+    // srcA=0 causes divide by zero on dstB
+    expect(warriors[0].alive).toBe(false);
+    expect(warriors[0].tasks).toBe(0);
   });
 });
 
@@ -128,30 +148,58 @@ describe('DIV/MOD partial zero in F/X', () => {
 describe('JMZ/JMN modifier variants', () => {
   it('JMZ.X checks both fields for zero', () => {
     const { core, warriors } = runOneCycle('JMZ.X $3, $1\nDAT #0, #0\nDAT #0, #0\nJMP $0');
+    // Both fields of B-target are 0, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMZ.I checks both fields for zero', () => {
     const { core, warriors } = runOneCycle('JMZ.I $3, $1\nDAT #0, #0\nDAT #0, #0\nJMP $0');
+    // Both fields of B-target are 0, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMN.F checks either field nonzero', () => {
     const { core, warriors } = runOneCycle('JMN.F $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
+    // A-field=5 is nonzero, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMN.X checks either field nonzero', () => {
     const { core, warriors } = runOneCycle('JMN.X $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
+    // A-field=5 is nonzero, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMN.I checks either field nonzero', () => {
     const { core, warriors } = runOneCycle('JMN.I $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
+    // A-field=5 is nonzero, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMN.AB checks B-field', () => {
     const { core, warriors } = runOneCycle('JMN.AB $3, $1\nDAT #0, #5\nDAT #0, #0\nJMP $0');
+    // AB modifier checks BVal (B-field=5) nonzero, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMN.BA checks A-field', () => {
     const { core, warriors } = runOneCycle('JMN.BA $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
+    // BA modifier checks AB (A-field=5) nonzero, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 });
 
@@ -326,12 +374,18 @@ describe('CMP additional modifiers', () => {
   it('CMP.I does not skip when instructions differ', () => {
     // Non-skip path
     const { core, warriors } = runOneCycle('CMP.I $1, $2\nDAT #1, #2\nMOV $0, $1\nDAT #0, #0');
-    // Different instructions, should not skip
+    // Different instructions, should not skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('CMP.F does not skip when fields partially differ', () => {
     const { core, warriors } = runOneCycle('CMP.F $1, $2\nDAT #1, #2\nDAT #1, #3\nDAT #0, #0');
-    // A fields equal but B fields differ, should not skip
+    // A fields equal but B fields differ, should not skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 });
 
@@ -339,6 +393,10 @@ describe('CMP additional modifiers', () => {
 describe('SLT I modifier', () => {
   it('SLT.I skips when both conditions met (same as F)', () => {
     const { core, warriors } = runOneCycle('SLT.I $1, $2\nDAT #1, #2\nDAT #5, #5\nDAT #0, #0');
+    // 1<5 and 2<5 both true, should skip — next PC is pos+2
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80);
   });
 });
 
@@ -556,20 +614,34 @@ describe('Simulator initialization error', () => {
 describe('CMP/SNE non-match paths', () => {
   it('CMP.X does not skip when cross-fields differ', () => {
     const { core, warriors } = runOneCycle('CMP.X $1, $2\nDAT #1, #2\nDAT #3, #4\nDAT #0, #0');
-    // 1!=4 and 2!=3, should NOT skip
+    // 1!=4 and 2!=3, should NOT skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('SNE.I does not skip when instructions match', () => {
     const { core, warriors } = runOneCycle('SNE.I $1, $2\nDAT #5, #10\nDAT #5, #10\nDAT #0, #0');
-    // Same instructions, should NOT skip for SNE
+    // Same instructions, checkCMP returns true, SNE does NOT skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('SNE.F does not skip when both field pairs match', () => {
     const { core, warriors } = runOneCycle('SNE.F $1, $2\nDAT #5, #10\nDAT #5, #10\nDAT #0, #0');
+    // Both field pairs match, checkCMP.F returns true, SNE does NOT skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('SNE.X does not skip when cross-field pairs match', () => {
     const { core, warriors } = runOneCycle('SNE.X $1, $2\nDAT #5, #10\nDAT #10, #5\nDAT #0, #0');
+    // Cross-fields match (5===5, 10===10), checkCMP.X returns true, SNE does NOT skip — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 });
 
@@ -577,20 +649,34 @@ describe('CMP/SNE non-match paths', () => {
 describe('JMZ non-jump paths', () => {
   it('JMZ.A does not jump when A-field nonzero', () => {
     const { core, warriors } = runOneCycle('JMZ.A $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
+    // A-field=5 is nonzero, JMZ.A does not jump — next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('JMZ.F does not jump when any field nonzero', () => {
     const { core, warriors } = runOneCycle('JMZ.F $3, $1\nDAT #0, #5\nDAT #0, #0\nJMP $0');
+    // B-field=5 is nonzero, JMZ.F requires both zero — does not jump, next PC is pos+1
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 1) % 80);
   });
 
   it('JMZ.BA checks A-field for zero', () => {
     const { core, warriors } = runOneCycle('JMZ.BA $3, $1\nDAT #0, #5\nDAT #0, #0\nJMP $0');
-    // A-field is 0, should jump
+    // A-field is 0, JMZ.BA checks AB===0, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 
   it('JMZ.AB checks B-field for zero', () => {
     const { core, warriors } = runOneCycle('JMZ.AB $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
-    // B-field is 0, should jump
+    // B-field is 0, JMZ.AB checks BVal===0, should jump to $3
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80);
   });
 });
 

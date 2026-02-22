@@ -189,7 +189,7 @@ describe('Compat serialise and republish', () => {
   });
 
   it('republish is a no-op', () => {
-    corewar.republish(); // Should not throw
+    expect(() => corewar.republish()).not.toThrow();
   });
 });
 
@@ -404,11 +404,17 @@ describe('More conditional branches', () => {
   it('JMZ.F checks both fields', () => {
     const { core, warriors } = runOneCycle('JMZ.F $3, $1\nDAT #0, #0\nDAT #0, #0\nJMP $0');
     // Should jump since both fields are zero at target
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80); // jumped to $3
   });
 
   it('JMN.A checks A-field nonzero', () => {
     const { core, warriors } = runOneCycle('JMN.A $3, $1\nDAT #5, #0\nDAT #0, #0\nJMP $0');
     // Should jump since A-field is nonzero at target
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 3) % 80); // jumped to $3
   });
 
   it('DJN.BA decrements A and checks', () => {
@@ -424,55 +430,100 @@ describe('SNE additional modifiers', () => {
   it('SNE.AB skips when A-field of src != B-field of dst', () => {
     const { core, warriors } = runOneCycle('SNE.AB #5, $1\nDAT #0, #3\nDAT #0, #0');
     // 5 != 3, should skip
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80); // skipped
   });
 
   it('SNE.BA skips when B-field of src != A-field of dst', () => {
     const { core, warriors } = runOneCycle('SNE.BA #5, $1\nDAT #3, #0\nDAT #0, #0');
+    // SNE.BA: B-field of src (irAValue) vs A-field of dst (AB_Value). src is #5 (immediate), so irAValue = irBValue = 0 from encoding
+    // Actually for IMMEDIATE A: AA_Value = irAValue = 5, irAValue = irBValue (B-field of the SNE instruction itself = 1)
+    // BA: compares AVal (src B) vs AB (dst A). src B = 1 (B-operand raw value), dst A = 3
+    // 1 != 3, should skip
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80); // skipped
   });
 
   it('SNE.F skips when either field pair differs', () => {
     const { core, warriors } = runOneCycle('SNE.F $1, $2\nDAT #1, #2\nDAT #1, #3');
     // A fields equal (1==1) but B fields differ (2!=3), should skip
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80); // skipped
   });
 
   it('SNE.X skips when cross-fields differ', () => {
     const { core, warriors } = runOneCycle('SNE.X $1, $2\nDAT #1, #2\nDAT #3, #1');
     // Cross: src.A vs dst.B (1 vs 1, equal), src.B vs dst.A (2 vs 3, differ) -> skip
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80); // skipped
   });
 
   it('SNE.I skips when full instructions differ', () => {
     const { core, warriors } = runOneCycle('SNE.I $1, $2\nDAT #1, #2\nMOV $0, $1');
+    // Different opcodes (DAT vs MOV), should skip
+    const pos = warriors[0].position;
+    const nextPC = warriors[0].processQueue.toArray()[0];
+    expect(nextPC).toBe((pos + 2) % 80); // skipped
   });
 });
 
 // --- LDP/STP F/X/I modifiers ---
 describe('LDP/STP F/X/I modifiers', () => {
   it('LDP.F loads using B-field index into B-field', () => {
-    runOneCycle('LDP.F $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('LDP.F $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // LDP.F loads pspace[AVal] into dst B-field. AVal = B-field of DAT at pos+1 = 1
+    // pspace[1] is initially 0, so B-field of pos+2 should be 0
+    expect(core.get((pos + 2) % 80).bValue).toBe(0);
+    expect(warriors[0].alive).toBe(true);
   });
 
   it('LDP.X loads using B-field index into B-field', () => {
-    runOneCycle('LDP.X $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('LDP.X $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // LDP.X falls through to B/F/X/I case: loads pspace[AVal=1] into dst B-field
+    expect(core.get((pos + 2) % 80).bValue).toBe(0);
+    expect(warriors[0].alive).toBe(true);
   });
 
   it('LDP.I loads using B-field index into B-field', () => {
-    runOneCycle('LDP.I $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('LDP.I $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // LDP.I falls through to B/F/X/I case: loads pspace[AVal=1] into dst B-field
+    expect(core.get((pos + 2) % 80).bValue).toBe(0);
+    expect(warriors[0].alive).toBe(true);
   });
 
   it('STP.F stores using B-field value at B-field index', () => {
-    runOneCycle('STP.F $1, $2\nDAT #0, #42\nDAT #0, #5');
+    const { warriors } = runOneCycle('STP.F $1, $2\nDAT #0, #42\nDAT #0, #5');
+    // STP.F stores AVal (42) at pspace[BVal (5)]. Warrior should still be alive.
+    expect(warriors[0].alive).toBe(true);
+    expect(warriors[0].tasks).toBe(1);
   });
 
   it('STP.X stores using B-field value at B-field index', () => {
-    runOneCycle('STP.X $1, $2\nDAT #0, #42\nDAT #0, #5');
+    const { warriors } = runOneCycle('STP.X $1, $2\nDAT #0, #42\nDAT #0, #5');
+    // STP.X stores AVal (42) at pspace[BVal (5)]. Warrior should still be alive.
+    expect(warriors[0].alive).toBe(true);
+    expect(warriors[0].tasks).toBe(1);
   });
 
   it('STP.I stores using B-field value at B-field index', () => {
-    runOneCycle('STP.I $1, $2\nDAT #0, #42\nDAT #0, #5');
+    const { warriors } = runOneCycle('STP.I $1, $2\nDAT #0, #42\nDAT #0, #5');
+    // STP.I stores AVal (42) at pspace[BVal (5)]. Warrior should still be alive.
+    expect(warriors[0].alive).toBe(true);
+    expect(warriors[0].tasks).toBe(1);
   });
 
   it('STP.AB stores A-field at B-field index', () => {
-    runOneCycle('STP.AB $1, $2\nDAT #42, #0\nDAT #0, #5');
+    const { warriors } = runOneCycle('STP.AB $1, $2\nDAT #42, #0\nDAT #0, #5');
+    // STP.AB stores AA (42) at pspace[BVal (5)]. Warrior should still be alive.
+    expect(warriors[0].alive).toBe(true);
+    expect(warriors[0].tasks).toBe(1);
   });
 });
 

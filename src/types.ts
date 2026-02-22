@@ -106,16 +106,16 @@ export const DEFAULT_OPTIONS: SimulatorOptions = {
   fixedPosition: null,
 };
 
-export const OPCODE_NAMES: readonly string[] = [
+export const OPCODE_NAMES = [
   'MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'JMZ',
   'JMN', 'DJN', 'CMP', 'SLT', 'SPL', 'DAT', 'JMP',
   'SEQ', 'SNE', 'NOP', 'LDP', 'STP',
 ] as const;
 
-export const MODIFIER_NAMES: readonly string[] = [
+export const MODIFIER_NAMES = [
   'A', 'B', 'AB', 'BA', 'F', 'X', 'I',
 ] as const;
 
-export const ADDRESS_MODE_SYMBOLS: readonly string[] = [
+export const ADDRESS_MODE_SYMBOLS = [
   '#', '$', '@', '<', '>', '*', '{', '}',
 ] as const;
