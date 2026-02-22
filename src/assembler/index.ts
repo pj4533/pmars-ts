@@ -2,6 +2,7 @@ import { type Instruction, type WarriorData, type SimulatorOptions, DEFAULT_OPTI
 import { encodeOpcode, decodeOpcode } from '../constants.js';
 import { ExpressionEvaluator } from './expression.js';
 import { normalize } from '../utils/modular-arithmetic.js';
+import { computePSpaceSize } from '../simulator/pspace.js';
 
 export interface AssemblerMessage {
   type: 'ERROR' | 'WARNING' | 'INFO';
@@ -75,7 +76,7 @@ export class Assembler {
     predefined.set('VERSION', 96);
     predefined.set('WARRIORS', opts.warriors);
     predefined.set('ROUNDS', opts.rounds);
-    predefined.set('PSPACESIZE', opts.pSpaceSize);
+    predefined.set('PSPACESIZE', opts.pSpaceSize > 0 ? opts.pSpaceSize : computePSpaceSize(opts.coreSize));
     // READLIMIT/WRITELIMIT: use raw values matching C behavior
     predefined.set('READLIMIT', opts.readLimit);
     predefined.set('WRITELIMIT', opts.writeLimit);
@@ -87,6 +88,7 @@ export class Assembler {
     const multiLineEquDefs: Map<string, string[]> = new Map();
     let forDepth = 0;
     let forBuffer: { label: string | null; count: number; lines: string[] } | null = null;
+    const forCounterNames = new Set<string>();
 
     // Issue #6: ;redcode delimiter tracking
     let redcodeFound = false;
@@ -161,7 +163,8 @@ export class Assembler {
           lastEquLabel = null;
           continue;
         }
-        lastEquLabel = null;
+        // Don't reset lastEquLabel for plain comments - C allows comments
+        // between multi-line EQU continuation lines without breaking the chain
         continue;
       }
 
@@ -183,12 +186,13 @@ export class Assembler {
             for (let i = 1; i <= forBuffer.count; i++) {
               if (forBuffer.label) {
                 equDefs.set(forBuffer.label, String(i));
+                forCounterNames.add(forBuffer.label);
               }
               for (const fline of expandedLines) {
                 // Update CURLINE during pass 1 expansion (matches C's trav2 behavior)
                 predefined.set('CURLINE', instrCount);
-                // Issue #3: & concatenation operator
-                const processedLine = this.substituteAmpersand(fline, equDefs, predefined);
+                // Issue #3: & concatenation operator (restricted to FOR counter variables, matching C's RSTACK)
+                const processedLine = this.substituteAmpersand(fline, equDefs, predefined, forCounterNames);
                 // Check if this is an EQU line - process as definition, not instruction
                 const forTokens = this.tokenizeLine(processedLine);
                 let forTokIdx = 0;
@@ -739,10 +743,11 @@ export class Assembler {
    * Issue #3: Replace &varname concatenation in FOR loop bodies.
    * If equDefs has 'I' = '3', then 'lab&I' becomes 'lab3'.
    */
-  private substituteAmpersand(line: string, equDefs: Map<string, string>, predefined: Map<string, number>): string {
+  private substituteAmpersand(line: string, equDefs: Map<string, string>, predefined: Map<string, number>, forCounterNames: Set<string>): string {
     return line.replace(/&([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => {
       const upper = varName.toUpperCase();
-      if (equDefs.has(upper)) {
+      // C only substitutes & for RSTACK (FOR counter) variables
+      if (forCounterNames.has(upper) && equDefs.has(upper)) {
         const val = equDefs.get(upper)!;
         // Match C's sprintf(buf, "%02u", value): zero-pad to 2 digits for numeric values
         const num = parseInt(val, 10);
@@ -751,8 +756,7 @@ export class Assembler {
         }
         return val;
       }
-      if (predefined.has(upper)) return String(predefined.get(upper));
-      return varName;
+      return '&' + varName;
     });
   }
 

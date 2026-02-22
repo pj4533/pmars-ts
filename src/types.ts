@@ -97,7 +97,7 @@ export const DEFAULT_OPTIONS: SimulatorOptions = {
   readLimit: 0,
   writeLimit: 0,
   rounds: 1,
-  pSpaceSize: 500,
+  pSpaceSize: 0,
   warriors: 2,
   seed: null,
 };

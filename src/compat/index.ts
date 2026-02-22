@@ -282,7 +282,7 @@ class CorewarCompat {
     // Re-assemble from the source using the assembler
     // Since we don't have the original source text, we build minimal instructions
     return {
-      instructions: [{ opcode: 0x60, aMode: AddressMode.DIRECT, bMode: AddressMode.DIRECT, aValue: 0, bValue: 0 }],
+      instructions: [{ ...INITIAL_INSTRUCTION }],
       startOffset: 0,
       name: parseResult.metaData.name,
       author: parseResult.metaData.author,

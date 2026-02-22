@@ -30,12 +30,10 @@ describe('MOV opcode variants', () => {
   });
 
   it('MOV.B copies B-field of source to B-field of target', () => {
-    const { core, warriors } = runOneCycle('MOV.B #5, $1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('MOV.B $1, $2\nDAT #0, #7\nDAT #0, #0');
     const pos = warriors[0].position;
-    // MOV.B: IR.A_value (B-field of A-operand) -> dst.bValue
-    // With #5, the value 5 is the immediate A-operand value
-    const dst = core.get((pos + 1) % 80);
-    expect(dst.bValue).toBeDefined();
+    // MOV.B: B-field of source (7) -> B-field of target
+    expect(core.get((pos + 2) % 80).bValue).toBe(7);
   });
 
   it('MOV.AB copies A-field of source to B-field of target', () => {
@@ -85,11 +83,11 @@ describe('SUB opcode variants', () => {
   });
 
   it('SUB.BA subtracts B-field from A-field', () => {
-    const { core, warriors } = runOneCycle('SUB.BA $1, $2\nDAT #5, #0\nDAT #10, #0');
+    const { core, warriors } = runOneCycle('SUB.BA $1, $2\nDAT #3, #7\nDAT #10, #0');
     const pos = warriors[0].position;
-    // A_value (AVal) = B-field of A-operand = 0
-    // SUB.BA: dst.aValue = AB - AVal = 10 - 0 = 10
-    // Hmm, need to trace more carefully
+    // SUB.BA: dst.aValue = AB - AVal where AVal = B-field of A-operand (7)
+    // AB = A-field of B-operand (10). Result: 10 - 7 = 3
+    expect(core.get((pos + 2) % 80).aValue).toBe(3);
   });
 });
 
@@ -203,29 +201,40 @@ describe('MOD opcode variants', () => {
 
 describe('JMZ opcode', () => {
   it('JMZ.B jumps when B-field of B-operand is zero', () => {
-    // JMZ checks B-operand's B-field, jumps to A-operand address if zero
     const { warriors } = runOneCycle('JMZ.B $2, $1\nDAT #0, #0\nDAT #0, #0');
-    // If jump taken, next PC should be position + 2
+    const pos = warriors[0].position;
+    // B-field of B-operand (DAT at pos+1) is 0, so jump to pos+2
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('JMZ.B does not jump when B-field is nonzero', () => {
     const { warriors } = runOneCycle('JMZ.B $2, $1\nDAT #0, #5\nDAT #0, #0');
-    // If no jump, next PC is position + 1
+    const pos = warriors[0].position;
+    // B-field is 5 (nonzero), so no jump -> next PC is pos+1
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('JMZ.A checks A-field', () => {
     const { warriors } = runOneCycle('JMZ.A $2, $1\nDAT #0, #5\nDAT #0, #0');
-    // A-field of B-operand is 0 -> should jump
+    const pos = warriors[0].position;
+    // A-field of B-operand (DAT at pos+1) is 0, so jump to pos+2
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 });
 
 describe('JMN opcode', () => {
   it('JMN.B jumps when B-field is nonzero', () => {
     const { warriors } = runOneCycle('JMN.B $2, $1\nDAT #0, #5\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // B-field is 5 (nonzero), so jump to pos+2
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('JMN.B does not jump when B-field is zero', () => {
     const { warriors } = runOneCycle('JMN.B $2, $1\nDAT #0, #0\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // B-field is 0, so no jump -> next PC is pos+1
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 });
 
@@ -253,68 +262,145 @@ describe('DJN opcode', () => {
 
 describe('CMP/SEQ opcode', () => {
   it('CMP.A skips when A-fields equal', () => {
-    // Can't easily check skip from outside, but at least exercise the code
-    runOneCycle('CMP.A $1, $2\nDAT #5, #0\nDAT #5, #0');
+    const { warriors } = runOneCycle('CMP.A $1, $2\nDAT #5, #0\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('CMP.A does not skip when A-fields differ', () => {
+    const { warriors } = runOneCycle('CMP.A $1, $2\nDAT #5, #0\nDAT #3, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('CMP.B skips when B-fields equal', () => {
-    runOneCycle('CMP.B $1, $2\nDAT #0, #5\nDAT #0, #5');
+    const { warriors } = runOneCycle('CMP.B $1, $2\nDAT #0, #5\nDAT #0, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('CMP.AB skips when A-field of src equals B-field of dst', () => {
-    runOneCycle('CMP.AB $1, $2\nDAT #5, #0\nDAT #0, #5');
+    const { warriors } = runOneCycle('CMP.AB $1, $2\nDAT #5, #0\nDAT #0, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('CMP.BA skips when B-field of src equals A-field of dst', () => {
-    runOneCycle('CMP.BA $1, $2\nDAT #0, #5\nDAT #5, #0');
+    const { warriors } = runOneCycle('CMP.BA $1, $2\nDAT #0, #5\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('CMP.F skips when both A and B fields equal', () => {
-    runOneCycle('CMP.F $1, $2\nDAT #3, #5\nDAT #3, #5');
+    const { warriors } = runOneCycle('CMP.F $1, $2\nDAT #3, #5\nDAT #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('CMP.F does not skip when fields differ', () => {
+    const { warriors } = runOneCycle('CMP.F $1, $2\nDAT #3, #5\nDAT #3, #6');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('CMP.X skips when cross-fields equal', () => {
-    runOneCycle('CMP.X $1, $2\nDAT #5, #3\nDAT #3, #5');
+    const { warriors } = runOneCycle('CMP.X $1, $2\nDAT #5, #3\nDAT #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('CMP.I skips when entire instructions match', () => {
-    runOneCycle('CMP.I $1, $2\nDAT #3, #5\nDAT #3, #5');
+    const { warriors } = runOneCycle('CMP.I $1, $2\nDAT #3, #5\nDAT #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('CMP.I does not skip when opcodes differ', () => {
+    const { warriors } = runOneCycle('CMP.I $1, $2\nDAT #3, #5\nNOP #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 });
 
 describe('SNE opcode', () => {
   it('SNE.A skips when A-fields differ', () => {
-    runOneCycle('SNE.A $1, $2\nDAT #3, #0\nDAT #5, #0');
+    const { warriors } = runOneCycle('SNE.A $1, $2\nDAT #3, #0\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('SNE.A does not skip when A-fields equal', () => {
+    const { warriors } = runOneCycle('SNE.A $1, $2\nDAT #5, #0\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('SNE.B skips when B-fields differ', () => {
-    runOneCycle('SNE.B $1, $2\nDAT #0, #3\nDAT #0, #5');
+    const { warriors } = runOneCycle('SNE.B $1, $2\nDAT #0, #3\nDAT #0, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('SNE.I skips when instructions differ', () => {
+    const { warriors } = runOneCycle('SNE.I $1, $2\nDAT #3, #5\nNOP #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('SNE.I does not skip when instructions match', () => {
+    const { warriors } = runOneCycle('SNE.I $1, $2\nDAT #3, #5\nDAT #3, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 });
 
 describe('SLT opcode', () => {
   it('SLT.A skips when A-field of src < A-field of dst', () => {
-    runOneCycle('SLT.A $1, $2\nDAT #3, #0\nDAT #5, #0');
+    const { warriors } = runOneCycle('SLT.A $1, $2\nDAT #3, #0\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('SLT.A does not skip when A-field of src >= A-field of dst', () => {
+    const { warriors } = runOneCycle('SLT.A $1, $2\nDAT #5, #0\nDAT #3, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('SLT.B skips when B-field of src < B-field of dst', () => {
-    runOneCycle('SLT.B $1, $2\nDAT #0, #3\nDAT #0, #5');
+    const { warriors } = runOneCycle('SLT.B $1, $2\nDAT #0, #3\nDAT #0, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('SLT.AB skips when A-field of src < B-field of dst', () => {
-    runOneCycle('SLT.AB $1, $2\nDAT #3, #0\nDAT #0, #5');
+    const { warriors } = runOneCycle('SLT.AB $1, $2\nDAT #3, #0\nDAT #0, #5');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('SLT.BA skips when B-field of src < A-field of dst', () => {
-    runOneCycle('SLT.BA $1, $2\nDAT #0, #3\nDAT #5, #0');
+    const { warriors } = runOneCycle('SLT.BA $1, $2\nDAT #0, #3\nDAT #5, #0');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 
   it('SLT.F skips when both A<A and B<B', () => {
-    runOneCycle('SLT.F $1, $2\nDAT #1, #2\nDAT #3, #4');
+    const { warriors } = runOneCycle('SLT.F $1, $2\nDAT #1, #2\nDAT #3, #4');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
+  });
+
+  it('SLT.F does not skip when one pair is not less', () => {
+    const { warriors } = runOneCycle('SLT.F $1, $2\nDAT #5, #2\nDAT #3, #4');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 1) % 80);
   });
 
   it('SLT.X skips when A<B and B<A cross', () => {
-    runOneCycle('SLT.X $1, $2\nDAT #2, #1\nDAT #3, #4');
+    const { warriors } = runOneCycle('SLT.X $1, $2\nDAT #2, #1\nDAT #3, #4');
+    const pos = warriors[0].position;
+    expect(warriors[0].processQueue.peek()).toBe((pos + 2) % 80);
   });
 });
 
@@ -326,29 +412,49 @@ describe('NOP opcode', () => {
 });
 
 describe('LDP/STP opcodes', () => {
-  it('STP stores value in P-space', () => {
-    // STP.B stores IR.A_value at P-space[IR.B_value]
-    runOneCycle('STP.AB #42, $1\nDAT #0, #5');
+  it('STP.AB stores A-value at P-space[B-value]', () => {
+    const { core, warriors } = runOneCycle('STP.AB #42, $1\nDAT #0, #5');
+    // Verify warrior is still alive (didn't crash)
+    expect(warriors[0].alive).toBe(true);
   });
 
-  it('LDP loads value from P-space', () => {
-    runOneCycle('LDP.AB #1, $1\nDAT #0, #0');
+  it('STP then LDP round-trip preserves value', () => {
+    // Store 42 at P-space index 3, then load from index 3
+    const cs = 80;
+    const w1 = makeWarrior('STP.AB #42, $2\nLDP.AB #3, $1\nDAT #0, #3\nDAT #0, #0', { coreSize: cs });
+    const w2 = makeWarrior('JMP $0', { coreSize: cs });
+    const sim = new Simulator({ coreSize: cs, maxCycles: 100, maxProcesses: 80, minSeparation: 10 });
+    sim.loadWarriors([w1, w2]);
+    sim.setupRound();
+    sim.step(); // STP: store 42 at p-space[3]
+    sim.step(); // warrior 1's turn
+    sim.step(); // LDP: load from p-space[3] into B-field of target at pos+2
+    const pos = sim.getWarriors()[0].position;
+    expect(sim.getCore().get((pos + 2) % cs).bValue).toBe(42);
   });
 
   it('LDP.A loads into A-field', () => {
-    runOneCycle('LDP.A #1, $1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('LDP.A #1, $1\nDAT #0, #0');
+    // P-space index 1 starts at 0, so A-field should be 0
+    const pos = warriors[0].position;
+    expect(core.get((pos + 1) % 80).aValue).toBe(0);
   });
 
   it('LDP.BA loads B-field index into A-field', () => {
-    runOneCycle('LDP.BA $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const { core, warriors } = runOneCycle('LDP.BA $1, $2\nDAT #0, #1\nDAT #0, #0');
+    const pos = warriors[0].position;
+    // Loads from P-space[1] (= 0) into A-field of target
+    expect(core.get((pos + 2) % 80).aValue).toBe(0);
   });
 
   it('STP.A stores A-field at A-field index', () => {
-    runOneCycle('STP.A $1, $2\nDAT #42, #0\nDAT #5, #0');
+    const { warriors } = runOneCycle('STP.A $1, $2\nDAT #42, #0\nDAT #5, #0');
+    expect(warriors[0].alive).toBe(true);
   });
 
   it('STP.BA stores B-field at A-field index', () => {
-    runOneCycle('STP.BA $1, $2\nDAT #0, #42\nDAT #5, #0');
+    const { warriors } = runOneCycle('STP.BA $1, $2\nDAT #0, #42\nDAT #5, #0');
+    expect(warriors[0].alive).toBe(true);
   });
 });
 

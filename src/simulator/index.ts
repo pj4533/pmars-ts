@@ -4,7 +4,7 @@ import { Core } from './core.js';
 import { SimWarrior } from './warrior.js';
 import { PSpace, computePSpaceSize } from './pspace.js';
 import { positionWarriors } from './positioning.js';
-import { addMod, subMod } from '../utils/modular-arithmetic.js';
+import { addMod, subMod, mulMod } from '../utils/modular-arithmetic.js';
 import { rng } from '../utils/rng.js';
 
 export interface CoreAccessEvent {
@@ -332,6 +332,7 @@ export class Simulator {
       }
     } else {
       addrB = progCnt;
+      raddrB = progCnt;
       irBValue = this.core.get(addrB).bValue;
       AB_Value = this.core.get(addrB).aValue;
     }
@@ -395,13 +396,13 @@ export class Simulator {
 
       case Opcode.CMP:
       case Opcode.SEQ:
-        if (this.checkCMP(modifier, addrA, addrB, AA_Value, irAValue, AB_Value, irBValue)) {
+        if (this.checkCMP(modifier, addrA, raddrB, AA_Value, irAValue, AB_Value, irBValue)) {
           nextAddr = addMod(progCnt, 2, coreSize);
         }
         break;
 
       case Opcode.SNE:
-        if (!this.checkCMP(modifier, addrA, addrB, AA_Value, irAValue, AB_Value, irBValue)) {
+        if (!this.checkCMP(modifier, addrA, raddrB, AA_Value, irAValue, AB_Value, irBValue)) {
           nextAddr = addMod(progCnt, 2, coreSize);
         }
         break;
@@ -656,25 +657,25 @@ export class Simulator {
     const dst = this.core.get(addrB);
     switch (mod) {
       case Modifier.A:
-        dst.aValue = (AB * AA) % cs;
+        dst.aValue = mulMod(AB, AA, cs);
         break;
       case Modifier.B:
-        dst.bValue = (BVal * AVal) % cs;
+        dst.bValue = mulMod(BVal, AVal, cs);
         break;
       case Modifier.AB:
-        dst.bValue = (BVal * AA) % cs;
+        dst.bValue = mulMod(BVal, AA, cs);
         break;
       case Modifier.BA:
-        dst.aValue = (AB * AVal) % cs;
+        dst.aValue = mulMod(AB, AVal, cs);
         break;
       case Modifier.F:
       case Modifier.I:
-        dst.aValue = (AB * AA) % cs;
-        dst.bValue = (BVal * AVal) % cs;
+        dst.aValue = mulMod(AB, AA, cs);
+        dst.bValue = mulMod(BVal, AVal, cs);
         break;
       case Modifier.X:
-        dst.bValue = (BVal * AA) % cs;
-        dst.aValue = (AB * AVal) % cs;
+        dst.bValue = mulMod(BVal, AA, cs);
+        dst.aValue = mulMod(AB, AVal, cs);
         break;
     }
     this.emitCoreAccess(wid, addrB, 'WRITE');
@@ -844,7 +845,7 @@ export class Simulator {
     }
   }
 
-  private checkCMP(mod: Modifier, addrA: number, addrB: number, AA: number, AVal: number, AB: number, BVal: number): boolean {
+  private checkCMP(mod: Modifier, addrA: number, raddrB: number, AA: number, AVal: number, AB: number, BVal: number): boolean {
     switch (mod) {
       case Modifier.A:
         return AB === AA;
@@ -860,7 +861,7 @@ export class Simulator {
         return BVal === AA && AB === AVal;
       case Modifier.I: {
         const a = this.core.get(addrA);
-        const b = this.core.get(addrB);
+        const b = this.core.get(raddrB);
         return a.opcode === b.opcode && a.aMode === b.aMode && a.bMode === b.bMode &&
                AA === AB && AVal === BVal;
       }

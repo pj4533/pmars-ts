@@ -14,7 +14,7 @@ export type { Instruction, WarriorData, SimulatorOptions, WarriorState } from '.
 export { encodeOpcode, decodeOpcode, createInstruction, INITIAL_INSTRUCTION } from './constants.js';
 
 // Utilities
-export { addMod, subMod, normalize } from './utils/modular-arithmetic.js';
+export { addMod, subMod, normalize, mulMod } from './utils/modular-arithmetic.js';
 export { CircularQueue } from './utils/circular-queue.js';
 export { rng } from './utils/rng.js';
 

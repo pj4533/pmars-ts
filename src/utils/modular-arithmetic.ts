@@ -13,3 +13,14 @@ export function normalize(value: number, m: number): number {
   if (v < 0) v += m;
   return v === 0 ? 0 : v; // avoid -0
 }
+
+/**
+ * Safe modular multiplication that avoids overflow for large core sizes.
+ * Regular JS multiplication can lose precision for values > ~94M (sqrt(2^53)).
+ */
+export function mulMod(a: number, b: number, m: number): number {
+  if (a < 94906265 && b < 94906265) {
+    return (a * b) % m;
+  }
+  return Number((BigInt(a) * BigInt(b)) % BigInt(m));
+}
