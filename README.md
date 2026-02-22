@@ -1,0 +1,116 @@
+# pmars-ts
+
+TypeScript port of [pmars](https://corewar.co.uk/pmars/) (portable Memory Array Redcode Simulator) for [Corewar](https://corewar.co.uk/). Faithfully replicates the behavior of the original C pmars implementation.
+
+Drop-in replacement for the [`corewar`](https://www.npmjs.com/package/corewar) npm package.
+
+## Installation
+
+```bash
+npm install pmars-ts
+```
+
+## Quick Start
+
+### Direct API
+
+```typescript
+import { Assembler, Simulator } from 'pmars-ts';
+
+const asm = new Assembler();
+const imp = asm.assemble(';redcode\n;name Imp\nMOV.I $0, $1');
+const dwarf = asm.assemble(';redcode\n;name Dwarf\nADD.AB #4, $3\nMOV.I $2, @2\nJMP $-2, $0\nDAT.F #0, #0');
+
+const sim = new Simulator({ coreSize: 8000, maxCycles: 80000 });
+sim.loadWarriors([imp.warrior!, dwarf.warrior!]);
+const results = sim.run();
+
+console.log(results[0].outcome, results[0].winnerId);
+```
+
+### corewar Compatibility API
+
+```typescript
+import { corewar } from 'pmars-ts';
+
+const result = corewar.parse(';redcode\n;name Imp\nMOV.I $0, $1');
+console.log(result.success, result.metaData.name);
+
+corewar.initialiseSimulator(
+  { coresize: 8000, maximumCycles: 80000, instructionLimit: 100, maxTasks: 8000, minSeparation: 100 },
+  [{ source: result }]
+);
+
+const roundResult = corewar.run();
+console.log(roundResult);
+```
+
+## Drop-in Replacement for corewar
+
+To migrate from the `corewar` npm package, change your import:
+
+```diff
+- import { corewar } from 'corewar';
++ import { corewar } from 'pmars-ts';
+```
+
+All existing API calls (`parse()`, `initialiseSimulator()`, `run()`, `step()`, `runMatch()`, `runHill()`) work identically. Event callbacks via `publishSync` for `CORE_ACCESS`, `TASK_COUNT`, and `ROUND_END` are fully supported.
+
+## API Reference
+
+### Assembler
+
+```typescript
+const asm = new Assembler(options?);
+const result = asm.assemble(source);
+// result.success, result.warrior, result.messages
+```
+
+### Simulator
+
+```typescript
+const sim = new Simulator(options?);
+sim.loadWarriors([warrior1, warrior2]);
+const results = sim.run(rounds?);     // Run all rounds
+sim.setupRound();                      // Manual round setup
+const stepResult = sim.step();         // Step one instruction
+```
+
+### Simulator Options
+
+| Option | Default | Description |
+|---|---|---|
+| `coreSize` | 8000 | Size of the core memory array |
+| `maxCycles` | 80000 | Maximum cycles per round |
+| `maxLength` | 100 | Maximum warrior length |
+| `maxProcesses` | 8000 | Maximum processes per warrior |
+| `minSeparation` | 100 | Minimum distance between warriors |
+| `rounds` | 1 | Number of rounds to simulate |
+
+### corewar Compat API
+
+```typescript
+import { corewar } from 'pmars-ts';
+
+corewar.parse(source)
+corewar.initialiseSimulator(options, warriors, messageProvider?)
+corewar.run()
+corewar.step(steps?)
+corewar.runMatch(rules, warriors, messageProvider?)
+corewar.runHill(rules, warriors, messageProvider?)
+```
+
+## Features
+
+- All 19 ICWS'94 opcodes (MOV, ADD, SUB, MUL, DIV, MOD, JMP, JMZ, JMN, DJN, CMP/SEQ, SNE, SLT, SPL, DAT, NOP, LDP, STP)
+- All 7 instruction modifiers (A, B, AB, BA, F, X, I)
+- All 8 addressing modes (#, $, @, <, >, *, {, })
+- P-space support with PIN sharing
+- In-register evaluation (ICWS'88 compliant)
+- Deterministic RNG matching pmars
+- Zero runtime dependencies
+- ESM and CommonJS dual output
+
+## License
+
+GPL-2.0 - see [LICENSE](LICENSE) for details. Matches the original pmars license.
