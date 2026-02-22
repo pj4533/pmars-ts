@@ -69,6 +69,15 @@ export class Simulator {
   loadWarriors(warriors: WarriorData[]): void {
     this.warriorData = warriors;
     const coreSize = this.options.coreSize;
+
+    // Validate and auto-adjust configuration (matches C's clparse.c validation)
+    if (this.options.minSeparation < this.options.maxLength) {
+      this.options.minSeparation = this.options.maxLength;
+    }
+    // If separation is too large for the core, reduce it to fit
+    if (warriors.length > 1 && coreSize < warriors.length * this.options.minSeparation) {
+      this.options.minSeparation = Math.floor(coreSize / warriors.length);
+    }
     this.warriors = warriors.map((w, i) =>
       new SimWarrior(i, w, this.options.maxProcesses, warriors.length, coreSize)
     );
@@ -187,27 +196,36 @@ export class Simulator {
     this.emitCoreAccess(w.id, progCnt, 'EXECUTE');
 
     // --- Evaluate A operand ---
+    // Matches C sim.c address resolution with multi-stage RWLIMIT folding
     let addrA: number;
     let AA_Value: number;
 
     if (irAMode !== AddressMode.IMMEDIATE) {
-      const baseAddrA = addMod(irAValue, progCnt, coreSize);
-      addrA = baseAddrA;
-      const baseA = this.core.get(baseAddrA);
+      addrA = this.foldr(addMod(irAValue, progCnt, coreSize), progCnt);
 
       if (irAMode !== AddressMode.DIRECT) {
         let fieldPtr: number;
         let isAField = false;
+        // waddrA: write-folded base addr for predec/postinc (C: waddrA = foldw(...))
+        let waddrA = addrA;
 
         if (irAMode === AddressMode.A_INDIRECT || irAMode === AddressMode.A_PREDECR || irAMode === AddressMode.A_POSTINC) {
           isAField = true;
-          fieldPtr = baseA.aValue;
+          if (irAMode !== AddressMode.A_INDIRECT) {
+            waddrA = this.foldw(addMod(irAValue, progCnt, coreSize), progCnt);
+            fieldPtr = this.core.get(waddrA).aValue;
+          } else {
+            this.emitCoreAccess(w.id, addrA, 'READ');
+            fieldPtr = this.core.get(addrA).aValue;
+          }
         } else {
-          fieldPtr = baseA.bValue;
-        }
-
-        if (irAMode === AddressMode.B_INDIRECT || irAMode === AddressMode.A_INDIRECT) {
-          this.emitCoreAccess(w.id, baseAddrA, 'READ');
+          if (irAMode !== AddressMode.B_INDIRECT) {
+            waddrA = this.foldw(addMod(irAValue, progCnt, coreSize), progCnt);
+            fieldPtr = this.core.get(waddrA).bValue;
+          } else {
+            this.emitCoreAccess(w.id, addrA, 'READ');
+            fieldPtr = this.core.get(addrA).bValue;
+          }
         }
 
         // Pre-decrement
@@ -215,13 +233,13 @@ export class Simulator {
           fieldPtr--;
           if (fieldPtr < 0) fieldPtr = coreSize1;
           if (isAField) {
-            this.core.get(baseAddrA).aValue = fieldPtr;
+            this.core.get(waddrA).aValue = fieldPtr;
           } else {
-            this.core.get(baseAddrA).bValue = fieldPtr;
+            this.core.get(waddrA).bValue = fieldPtr;
           }
         }
 
-        addrA = addMod(fieldPtr, baseAddrA, coreSize);
+        addrA = this.foldr(addMod(fieldPtr, addrA, coreSize), progCnt);
         AA_Value = this.core.get(addrA).aValue;
         irAValue = this.core.get(addrA).bValue;
 
@@ -230,18 +248,17 @@ export class Simulator {
           fieldPtr++;
           if (fieldPtr === coreSize) fieldPtr = 0;
           if (isAField) {
-            this.core.get(baseAddrA).aValue = fieldPtr;
+            this.core.get(waddrA).aValue = fieldPtr;
           } else {
-            this.core.get(baseAddrA).bValue = fieldPtr;
+            this.core.get(waddrA).bValue = fieldPtr;
           }
         }
       } else {
         // DIRECT mode
+        const baseA = this.core.get(addrA);
         AA_Value = baseA.aValue;
         irAValue = baseA.bValue;
       }
-
-      addrA = this.foldr(addrA, progCnt);
     } else {
       // IMMEDIATE mode
       AA_Value = irAValue;
@@ -250,13 +267,15 @@ export class Simulator {
     }
 
     // --- Evaluate B operand ---
+    // C maintains separate read (raddrB via foldr) and write (addrB via foldw) pointers
     let addrB: number;
+    let raddrB: number;
     let AB_Value: number;
 
     if (irBMode !== AddressMode.IMMEDIATE) {
-      const baseAddrB = addMod(irBValue, progCnt, coreSize);
-      addrB = baseAddrB;
-      const baseB = this.core.get(baseAddrB);
+      raddrB = this.foldr(addMod(irBValue, progCnt, coreSize), progCnt);
+      addrB = this.foldw(addMod(irBValue, progCnt, coreSize), progCnt);
+      const baseWriteAddrB = addrB; // save for post-increment
 
       if (irBMode !== AddressMode.DIRECT) {
         let fieldPtr: number;
@@ -264,46 +283,53 @@ export class Simulator {
 
         if (irBMode === AddressMode.A_INDIRECT || irBMode === AddressMode.A_PREDECR || irBMode === AddressMode.A_POSTINC) {
           isAField = true;
-          fieldPtr = baseB.aValue;
+          if (irBMode !== AddressMode.A_INDIRECT) {
+            fieldPtr = this.core.get(addrB).aValue;
+          } else {
+            this.emitCoreAccess(w.id, raddrB, 'READ');
+            fieldPtr = this.core.get(raddrB).aValue;
+          }
         } else {
-          fieldPtr = baseB.bValue;
+          if (irBMode !== AddressMode.B_INDIRECT) {
+            fieldPtr = this.core.get(addrB).bValue;
+          } else {
+            this.emitCoreAccess(w.id, raddrB, 'READ');
+            fieldPtr = this.core.get(raddrB).bValue;
+          }
         }
 
-        if (irBMode === AddressMode.B_INDIRECT || irBMode === AddressMode.A_INDIRECT) {
-          this.emitCoreAccess(w.id, baseAddrB, 'READ');
-        }
-
-        // Pre-decrement
+        // Pre-decrement - write to write-folded base address
         if (irBMode === AddressMode.B_PREDECR || irBMode === AddressMode.A_PREDECR) {
           fieldPtr--;
           if (fieldPtr < 0) fieldPtr = coreSize1;
           if (isAField) {
-            this.core.get(baseAddrB).aValue = fieldPtr;
+            this.core.get(addrB).aValue = fieldPtr;
           } else {
-            this.core.get(baseAddrB).bValue = fieldPtr;
+            this.core.get(addrB).bValue = fieldPtr;
           }
         }
 
-        addrB = addMod(fieldPtr, baseAddrB, coreSize);
-        AB_Value = this.core.get(addrB).aValue;
-        irBValue = this.core.get(addrB).bValue;
+        // Final addresses: write via foldw, read via foldr
+        addrB = this.foldw(addMod(fieldPtr, addrB, coreSize), progCnt);
+        raddrB = this.foldr(addMod(fieldPtr, raddrB, coreSize), progCnt);
+        AB_Value = this.core.get(raddrB).aValue;
+        irBValue = this.core.get(raddrB).bValue;
 
-        // Post-increment
+        // Post-increment - write to the BASE offset cell (not final resolved addr)
         if (irBMode === AddressMode.B_POSTINC || irBMode === AddressMode.A_POSTINC) {
           fieldPtr++;
           if (fieldPtr === coreSize) fieldPtr = 0;
           if (isAField) {
-            this.core.get(baseAddrB).aValue = fieldPtr;
+            this.core.get(baseWriteAddrB).aValue = fieldPtr;
           } else {
-            this.core.get(baseAddrB).bValue = fieldPtr;
+            this.core.get(baseWriteAddrB).bValue = fieldPtr;
           }
         }
       } else {
+        const baseB = this.core.get(raddrB);
         AB_Value = baseB.aValue;
         irBValue = baseB.bValue;
       }
-
-      addrB = this.foldw(addrB, progCnt);
     } else {
       addrB = progCnt;
       irBValue = this.core.get(addrB).bValue;

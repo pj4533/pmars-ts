@@ -35,7 +35,24 @@ export class Assembler {
   assemble(source: string): AssembleResult {
     const opts = { ...DEFAULT_OPTIONS, ...this.options };
     const messages: AssemblerMessage[] = [];
-    const lines = source.split('\n');
+    // Handle line continuation: join lines ending with '\' (before any comment)
+    const rawLines = source.split('\n');
+    const lines: string[] = [];
+    let continuation = '';
+    for (const rawLine of rawLines) {
+      // Strip trailing comment to check for backslash
+      const commentPos = rawLine.indexOf(';');
+      const beforeComment = commentPos >= 0 ? rawLine.substring(0, commentPos) : rawLine;
+      const afterComment = commentPos >= 0 ? rawLine.substring(commentPos) : '';
+      if (beforeComment.trimEnd().endsWith('\\')) {
+        // Remove the backslash and accumulate
+        continuation += beforeComment.trimEnd().slice(0, -1);
+      } else {
+        lines.push(continuation + rawLine);
+        continuation = '';
+      }
+    }
+    if (continuation) lines.push(continuation);
 
     let name = 'Unknown';
     let author = 'Anonymous';
@@ -59,9 +76,9 @@ export class Assembler {
     predefined.set('WARRIORS', opts.warriors);
     predefined.set('ROUNDS', opts.rounds);
     predefined.set('PSPACESIZE', opts.pSpaceSize);
-    // Issue #9: READLIMIT/WRITELIMIT predefined constants
-    predefined.set('READLIMIT', opts.readLimit === 0 ? opts.coreSize : opts.readLimit);
-    predefined.set('WRITELIMIT', opts.writeLimit === 0 ? opts.coreSize : opts.writeLimit);
+    // READLIMIT/WRITELIMIT: use raw values matching C behavior
+    predefined.set('READLIMIT', opts.readLimit);
+    predefined.set('WRITELIMIT', opts.writeLimit);
 
     // Pass 1: collect labels, EQUs, metadata, and instruction lines
     let instrCount = 0;
@@ -77,6 +94,7 @@ export class Assembler {
 
     // Track the last label seen for multi-line EQU accumulation
     let lastEquLabel: string | null = null;
+    let assertFound = false;
 
     for (let lineNum = 0; lineNum < lines.length; lineNum++) {
       let line = lines[lineNum];
@@ -131,6 +149,7 @@ export class Assembler {
         }
         if (upperDir.startsWith('ASSERT')) {
           // Issue #5: ;assert evaluation
+          assertFound = true;
           const assertExpr = directive.substring(6).trim();
           if (assertExpr) {
             const substituted = this.substituteEqus(assertExpr, equDefs, predefined);
@@ -166,8 +185,28 @@ export class Assembler {
                 equDefs.set(forBuffer.label, String(i));
               }
               for (const fline of expandedLines) {
+                // Update CURLINE during pass 1 expansion (matches C's trav2 behavior)
+                predefined.set('CURLINE', instrCount);
                 // Issue #3: & concatenation operator
                 const processedLine = this.substituteAmpersand(fline, equDefs, predefined);
+                // Check if this is an EQU line - process as definition, not instruction
+                const forTokens = this.tokenizeLine(processedLine);
+                let forTokIdx = 0;
+                let forLabel: string | null = null;
+                while (forTokIdx < forTokens.length) {
+                  const tok = forTokens[forTokIdx].toUpperCase();
+                  if (this.isOpcode(tok) || tok === 'EQU') break;
+                  let lbl = forTokens[forTokIdx];
+                  if (lbl.endsWith(':')) lbl = lbl.slice(0, -1);
+                  forLabel = lbl.toUpperCase();
+                  forTokIdx++;
+                }
+                if (forTokIdx < forTokens.length && forTokens[forTokIdx].toUpperCase() === 'EQU' && forLabel) {
+                  const equValue = forTokens.slice(forTokIdx + 1).join(' ');
+                  equDefs.set(forLabel, equValue);
+                  labels.set(forLabel, { name: forLabel, value: 0, isEqu: true, equText: equValue });
+                  continue; // Don't add as instruction
+                }
                 instructions.push({ line: lineNum + 1, text: processedLine, rawLine });
                 instrCount++;
               }
@@ -186,6 +225,7 @@ export class Assembler {
 
       // Parse labels, opcodes, EQU, FOR, ORG, END, PIN
       let labelName: string | null = null;
+      const labelNames: string[] = [];
       let rest = line;
 
       // Extract label(s)
@@ -194,7 +234,7 @@ export class Assembler {
 
       let tokenIdx = 0;
 
-      // Check for label
+      // Check for label(s) - support multiple labels per instruction (up to 7 like C's GRPMAX)
       while (tokenIdx < tokens.length) {
         const tok = tokens[tokenIdx].toUpperCase();
         if (this.isOpcode(tok) || tok === 'EQU' || tok === 'FOR' || tok === 'END' || tok === 'ORG' || tok === 'PIN') {
@@ -204,13 +244,14 @@ export class Assembler {
         let lbl = tokens[tokenIdx];
         if (lbl.endsWith(':')) lbl = lbl.slice(0, -1);
         labelName = lbl.toUpperCase();
+        labelNames.push(labelName);
         tokenIdx++;
       }
 
       if (tokenIdx >= tokens.length) {
         // Label only, no instruction
-        if (labelName) {
-          labels.set(labelName, { name: labelName, value: instrCount, isEqu: false });
+        for (const lbl of labelNames) {
+          labels.set(lbl, { name: lbl, value: instrCount, isEqu: false });
         }
         lastEquLabel = null;
         continue;
@@ -271,7 +312,14 @@ export class Assembler {
           // Issue #10: Use absolute label values for END
           const substituted = this.substituteLabelsAndEqusAbsolute(offsetExpr, labels, equDefs, predefined);
           const evalResult = this.evaluator.evaluate(substituted);
-          if (evalResult.ok && evalResult.value !== 0) endOffset = evalResult.value;
+          if (evalResult.ok && evalResult.value !== 0) {
+            if (orgOffset !== 0) {
+              // DOEERR: END offset ignored when ORG already set
+              messages.push({ type: 'WARNING', line: lineNum + 1, text: 'END offset ignored, ORG already set' });
+            } else {
+              endOffset = evalResult.value;
+            }
+          }
         }
         break; // Stop processing after END
       }
@@ -285,9 +333,9 @@ export class Assembler {
         continue;
       }
 
-      // It's an instruction
-      if (labelName) {
-        labels.set(labelName, { name: labelName, value: instrCount, isEqu: false });
+      // It's an instruction - register all labels for this line
+      for (const lbl of labelNames) {
+        labels.set(lbl, { name: lbl, value: instrCount, isEqu: false });
       }
 
       // Issue #1: Check if this is a reference to a multi-line EQU
@@ -298,6 +346,11 @@ export class Assembler {
 
     if (endOffset !== null && orgOffset === 0) {
       orgOffset = endOffset;
+    }
+
+    // NASERR: warn when no ;assert directive is present
+    if (!assertFound) {
+      messages.push({ type: 'WARNING', line: 0, text: 'Missing ASSERT' });
     }
 
     // Issue #1: Expand multi-line EQU references in instructions
@@ -689,7 +742,15 @@ export class Assembler {
   private substituteAmpersand(line: string, equDefs: Map<string, string>, predefined: Map<string, number>): string {
     return line.replace(/&([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => {
       const upper = varName.toUpperCase();
-      if (equDefs.has(upper)) return equDefs.get(upper)!;
+      if (equDefs.has(upper)) {
+        const val = equDefs.get(upper)!;
+        // Match C's sprintf(buf, "%02u", value): zero-pad to 2 digits for numeric values
+        const num = parseInt(val, 10);
+        if (!isNaN(num) && String(num) === val) {
+          return String(num).padStart(2, '0');
+        }
+        return val;
+      }
       if (predefined.has(upper)) return String(predefined.get(upper));
       return varName;
     });

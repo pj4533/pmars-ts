@@ -17,6 +17,15 @@ export function positionWarriors(
   const positions = new Array(warriorCount).fill(0);
   if (warriorCount <= 1) return { positions, seed };
 
+  // 2-warrior fast path: matches C sim.c:351-365
+  // C uses seed directly THEN advances, unlike posit() which advances first
+  if (warriorCount === 2) {
+    const numPositions = coreSize + 1 - 2 * separation;
+    positions[1] = separation + seed % numPositions;
+    seed = rng(seed);
+    return { positions, seed };
+  }
+
   // Multi-warrior positioning: try posit(), fall back to npos()
   const result = posit(warriorCount, coreSize, separation, seed, positions);
   if (result.success) {
