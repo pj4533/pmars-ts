@@ -18,7 +18,7 @@ export { addMod, subMod, normalize } from './utils/modular-arithmetic.js';
 export { CircularQueue } from './utils/circular-queue.js';
 export { rng } from './utils/rng.js';
 
-// corewar-compatible API (drop-in replacement)
+// Compat API
 export { corewar } from './compat/index.js';
 export {
   ModeType, OpcodeType, ModifierType, TokenCategory, MessageType, CoreAccessType,

@@ -2,8 +2,6 @@
 
 TypeScript port of [pMARS](https://corewar.co.uk/pmars.htm) (portable Memory Array Redcode Simulator) for [Core War](https://corewar.co.uk/). Faithfully replicates the behavior of the original C implementation.
 
-Drop-in replacement for the [`corewar`](https://www.npmjs.com/package/corewar) npm package.
-
 ## Installation
 
 ```bash
@@ -28,7 +26,7 @@ const results = sim.run();
 console.log(results[0].outcome, results[0].winnerId);
 ```
 
-### corewar Compatibility API
+### Compat API
 
 ```typescript
 import { corewar } from 'pmars-ts';
@@ -44,17 +42,6 @@ corewar.initialiseSimulator(
 const roundResult = corewar.run();
 console.log(roundResult);
 ```
-
-## Drop-in Replacement for corewar
-
-To migrate from the `corewar` npm package, change your import:
-
-```diff
-- import { corewar } from 'corewar';
-+ import { corewar } from 'pmars-ts';
-```
-
-All existing API calls (`parse()`, `initialiseSimulator()`, `run()`, `step()`, `runMatch()`, `runHill()`) work identically. Event callbacks via `publishSync` for `CORE_ACCESS`, `TASK_COUNT`, and `ROUND_END` are fully supported.
 
 ## API Reference
 
@@ -87,7 +74,7 @@ const stepResult = sim.step();         // Step one instruction
 | `minSeparation` | 100 | Minimum distance between warriors |
 | `rounds` | 1 | Number of rounds to simulate |
 
-### corewar Compat API
+### Compat API
 
 ```typescript
 import { corewar } from 'pmars-ts';

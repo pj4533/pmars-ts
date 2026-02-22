@@ -1,10 +1,7 @@
-// Migration example: changing from 'corewar' to 'pmars-ts'
-//
-// Before: import { corewar } from 'corewar';
-// After:
+// Example: running a battle using the compat API
 import { corewar } from '../src/index.js';
 
-// Parse warriors (API identical to corewar package)
+// Parse warriors
 const warrior1 = corewar.parse(`
 ;redcode
 ;name Imp
