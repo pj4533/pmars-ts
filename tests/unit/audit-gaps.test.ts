@@ -399,16 +399,16 @@ describe('Expression evaluator bitwise operators', () => {
 
   it('handles && as logical AND', () => {
     const eval2 = new ExpressionEvaluator();
-    expect(eval2.evaluate('1 && 1')).toEqual({ ok: true, value: 1 });
-    expect(eval2.evaluate('1 && 0')).toEqual({ ok: true, value: 0 });
-    expect(eval2.evaluate('0 && 1')).toEqual({ ok: true, value: 0 });
+    expect(eval2.evaluate('1 && 1')).toEqual({ ok: true, value: 1, overflow: false });
+    expect(eval2.evaluate('1 && 0')).toEqual({ ok: true, value: 0, overflow: false });
+    expect(eval2.evaluate('0 && 1')).toEqual({ ok: true, value: 0, overflow: false });
   });
 
   it('handles || as logical OR', () => {
     const eval2 = new ExpressionEvaluator();
-    expect(eval2.evaluate('0 || 1')).toEqual({ ok: true, value: 1 });
-    expect(eval2.evaluate('0 || 0')).toEqual({ ok: true, value: 0 });
-    expect(eval2.evaluate('1 || 0')).toEqual({ ok: true, value: 1 });
+    expect(eval2.evaluate('0 || 1')).toEqual({ ok: true, value: 1, overflow: false });
+    expect(eval2.evaluate('0 || 0')).toEqual({ ok: true, value: 0, overflow: false });
+    expect(eval2.evaluate('1 || 0')).toEqual({ ok: true, value: 1, overflow: false });
   });
 });
 

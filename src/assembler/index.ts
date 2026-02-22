@@ -569,6 +569,9 @@ export class Assembler {
 
     if (aResult.ok) {
       aValue = normalize(aResult.value, coreSize);
+      if (aResult.overflow) {
+        messages.push({ type: 'WARNING', line: lineNum, text: `A-field expression overflow: ${aExpr}` });
+      }
     } else {
       messages.push({ type: 'ERROR', line: lineNum, text: `Bad A-field expression: ${aExpr} (${aResult.error})` });
       return null;
@@ -576,6 +579,9 @@ export class Assembler {
 
     if (bResult.ok) {
       bValue = normalize(bResult.value, coreSize);
+      if (bResult.overflow) {
+        messages.push({ type: 'WARNING', line: lineNum, text: `B-field expression overflow: ${bExpr}` });
+      }
     } else {
       messages.push({ type: 'ERROR', line: lineNum, text: `Bad B-field expression: ${bExpr} (${bResult.error})` });
       return null;

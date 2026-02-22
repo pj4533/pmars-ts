@@ -19,7 +19,7 @@ function isTerminal(ch: string): boolean {
   return ch === ')' || ch === '' || ch === undefined;
 }
 
-export type EvalResult = { ok: true; value: number } | { ok: false; error: 'BAD_EXPR' | 'DIV_ZERO' | 'OVERFLOW' };
+export type EvalResult = { ok: true; value: number; overflow: boolean } | { ok: false; error: 'BAD_EXPR' | 'DIV_ZERO' };
 
 export class ExpressionEvaluator {
   private registers: number[] = new Array(26).fill(0);
@@ -47,11 +47,15 @@ export class ExpressionEvaluator {
       return { ok: false, error: 'BAD_EXPR' };
     }
 
+    if (this.error === 'OVERFLOW') {
+      return { ok: true, value: result, overflow: true };
+    }
+
     if (this.error) {
       return { ok: false, error: this.error };
     }
 
-    return { ok: true, value: result };
+    return { ok: true, value: result, overflow: false };
   }
 
   private evalExpr(ctx: { pos: number; src: string }, prevPrec: number, val1: number, oper1: number): number {
