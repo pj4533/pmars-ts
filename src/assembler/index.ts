@@ -81,9 +81,9 @@ export class Assembler {
     predefined.set('WARRIORS', opts.warriors);
     predefined.set('ROUNDS', opts.rounds);
     predefined.set('PSPACESIZE', opts.pSpaceSize > 0 ? opts.pSpaceSize : computePSpaceSize(opts.coreSize));
-    // READLIMIT/WRITELIMIT: use raw values matching C behavior
-    predefined.set('READLIMIT', opts.readLimit);
-    predefined.set('WRITELIMIT', opts.writeLimit);
+    // READLIMIT/WRITELIMIT: default to coreSize when 0 (matches C clparse.c:646-649)
+    predefined.set('READLIMIT', opts.readLimit || opts.coreSize);
+    predefined.set('WRITELIMIT', opts.writeLimit || opts.coreSize);
 
     // Pass 1: collect labels, EQUs, metadata, and instruction lines
     let instrCount = 0;
@@ -478,8 +478,18 @@ export class Assembler {
       tokenIdx++;
       // Check if next token is a modifier (starts with .)
       if (tokenIdx < tokens.length && tokens[tokenIdx].startsWith('.')) {
-        modifierStr = tokens[tokenIdx].substring(1).toUpperCase();
-        tokenIdx++;
+        const modText = tokens[tokenIdx].substring(1).toUpperCase();
+        if (modText.length > 0) {
+          modifierStr = modText;
+          tokenIdx++;
+        } else {
+          // Standalone dot with space — modifier is next token (handles "MOV . I")
+          tokenIdx++;
+          if (tokenIdx < tokens.length) {
+            modifierStr = tokens[tokenIdx].toUpperCase();
+            tokenIdx++;
+          }
+        }
       }
     }
 

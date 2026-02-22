@@ -145,18 +145,20 @@ export class Simulator {
     this.core.clear();
     this.roundNum++;
 
-    // Position warriors
-    if (this.options.fixedPosition != null) {
-      // -F flag: use explicit fixed position, skip rng (matches C sim.c:328-329)
-      this.seed = this.options.fixedPosition - this.options.minSeparation;
-    } else if (this.seed === 0) {
-      if (this.options.fixedSeries) {
-        // -f flag: seed from warrior checksums specifically
-        this.seed = this.checksumWarriors();
+    // Seed initialization — only once before first round (matches C sim.c:328-331)
+    if (this.roundNum === 1) {
+      if (this.options.fixedPosition != null) {
+        // -F flag: use explicit fixed position, skip rng
+        this.seed = this.options.fixedPosition - this.options.minSeparation;
       } else {
-        this.seed = this.options.seed ?? this.checksumWarriors();
+        if (this.options.fixedSeries) {
+          // -f flag: seed from warrior checksums specifically
+          this.seed = this.checksumWarriors();
+        } else {
+          this.seed = this.options.seed ?? this.checksumWarriors();
+        }
+        this.seed = rng(this.seed);
       }
-      this.seed = rng(this.seed);
     }
 
     const { positions, seed: newSeed } = positionWarriors(
@@ -227,7 +229,7 @@ export class Simulator {
     let AA_Value: number;
 
     if (irAMode !== AddressMode.IMMEDIATE) {
-      addrA = this.foldr(addMod(irAValue, progCnt, coreSize), progCnt);
+      addrA = this.foldr(progCnt + irAValue, progCnt);
 
       if (irAMode !== AddressMode.DIRECT) {
         let fieldPtr: number;
@@ -238,7 +240,7 @@ export class Simulator {
         if (irAMode === AddressMode.A_INDIRECT || irAMode === AddressMode.A_PREDECR || irAMode === AddressMode.A_POSTINC) {
           isAField = true;
           if (irAMode !== AddressMode.A_INDIRECT) {
-            waddrA = this.foldw(addMod(irAValue, progCnt, coreSize), progCnt);
+            waddrA = this.foldw(progCnt + irAValue, progCnt);
             fieldPtr = this.core.get(waddrA).aValue;
           } else {
             this.emitCoreAccess(w.id, addrA, 'READ');
@@ -246,7 +248,7 @@ export class Simulator {
           }
         } else {
           if (irAMode !== AddressMode.B_INDIRECT) {
-            waddrA = this.foldw(addMod(irAValue, progCnt, coreSize), progCnt);
+            waddrA = this.foldw(progCnt + irAValue, progCnt);
             fieldPtr = this.core.get(waddrA).bValue;
           } else {
             this.emitCoreAccess(w.id, addrA, 'READ');
@@ -268,7 +270,7 @@ export class Simulator {
         // C: addrA = foldr(addrA + temp) -- for predecr/postinc, addrA was
         // set to waddrA (write-folded) before this point (sim.c:454,464)
         const addrABase = (irAMode !== AddressMode.A_INDIRECT && irAMode !== AddressMode.B_INDIRECT) ? waddrA : addrA;
-        addrA = this.foldr(addMod(fieldPtr, addrABase, coreSize), progCnt);
+        addrA = this.foldr(addrABase + fieldPtr, progCnt);
         AA_Value = this.core.get(addrA).aValue;
         irAValue = this.core.get(addrA).bValue;
 
@@ -302,8 +304,8 @@ export class Simulator {
     let AB_Value: number;
 
     if (irBMode !== AddressMode.IMMEDIATE) {
-      raddrB = this.foldr(addMod(irBValue, progCnt, coreSize), progCnt);
-      addrB = this.foldw(addMod(irBValue, progCnt, coreSize), progCnt);
+      raddrB = this.foldr(progCnt + irBValue, progCnt);
+      addrB = this.foldw(progCnt + irBValue, progCnt);
       const baseWriteAddrB = addrB; // save for post-increment
 
       if (irBMode !== AddressMode.DIRECT) {
@@ -341,8 +343,8 @@ export class Simulator {
         // Final addresses: write via foldw, read via foldr
         // C: for predecr/postinc, raddrB was set to addrB (write-folded) at sim.c:568,578
         const raddrBBase = (irBMode !== AddressMode.A_INDIRECT && irBMode !== AddressMode.B_INDIRECT) ? addrB : raddrB;
-        addrB = this.foldw(addMod(fieldPtr, addrB, coreSize), progCnt);
-        raddrB = this.foldr(addMod(fieldPtr, raddrBBase, coreSize), progCnt);
+        addrB = this.foldw(addrB + fieldPtr, progCnt);
+        raddrB = this.foldr(raddrBBase + fieldPtr, progCnt);
         AB_Value = this.core.get(raddrB).aValue;
         irBValue = this.core.get(raddrB).bValue;
 
@@ -558,10 +560,11 @@ export class Simulator {
     return checksum;
   }
 
+  /** Fold address using read limit. Accepts raw (unreduced) addresses to match C sim.c behavior. */
   private foldr(addr: number, progCnt: number): number {
-    if (this.options.readLimit === 0) return addr;
-    const rl = this.options.readLimit;
     const cs = this.options.coreSize;
+    if (this.options.readLimit === 0) return ((addr % cs) + cs) % cs;
+    const rl = this.options.readLimit;
     let result = (addr + cs - progCnt) % rl;
     if (result > Math.floor(rl / 2)) {
       result = result + cs - rl;
@@ -569,10 +572,11 @@ export class Simulator {
     return addMod(result, progCnt, cs);
   }
 
+  /** Fold address using write limit. Accepts raw (unreduced) addresses to match C sim.c behavior. */
   private foldw(addr: number, progCnt: number): number {
-    if (this.options.writeLimit === 0) return addr;
-    const wl = this.options.writeLimit;
     const cs = this.options.coreSize;
+    if (this.options.writeLimit === 0) return ((addr % cs) + cs) % cs;
+    const wl = this.options.writeLimit;
     let result = (addr + cs - progCnt) % wl;
     if (result > Math.floor(wl / 2)) {
       result = result + cs - wl;

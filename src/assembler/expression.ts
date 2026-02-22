@@ -173,11 +173,16 @@ export class ExpressionEvaluator {
     }
   }
 
+  private checkOverflow(result: number): number {
+    if (result > 2147483647 || result < -2147483648) this.error = 'OVERFLOW';
+    return result;
+  }
+
   private calc(x: number, y: number, op: number): number {
     switch (op) {
-      case '+'.charCodeAt(0): return x + y;
-      case '-'.charCodeAt(0): return x - y;
-      case '*'.charCodeAt(0): return x * y;
+      case '+'.charCodeAt(0): return this.checkOverflow(x + y);
+      case '-'.charCodeAt(0): return this.checkOverflow(x - y);
+      case '*'.charCodeAt(0): return this.checkOverflow(x * y);
       case '/'.charCodeAt(0):
         if (y === 0) { this.error = 'DIV_ZERO'; return 0; }
         return Math.trunc(x / y);
@@ -200,8 +205,13 @@ export class ExpressionEvaluator {
   }
 
   private skipSpace(ctx: { pos: number; src: string }): void {
-    while (ctx.pos < ctx.src.length && (ctx.src[ctx.pos] === ' ' || ctx.src[ctx.pos] === '\t' || ctx.src[ctx.pos] === '\n')) {
-      ctx.pos++;
+    while (ctx.pos < ctx.src.length) {
+      const ch = ctx.src[ctx.pos];
+      if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v') {
+        ctx.pos++;
+      } else {
+        break;
+      }
     }
   }
 }
