@@ -1,6 +1,6 @@
 {
   "name": "pmars-ts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript port of pmars (portable Memory Array Redcode Simulator) for Corewar",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -22,7 +22,7 @@
     "test": "vitest run --coverage",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "build": "tsc -p tsconfig.build.json && cp -r dist/esm dist/cjs && node -e \"require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -e \"require('fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}')\"",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/cjs && cp -r dist/esm/. dist/cjs/ && node -e \"require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -e \"require('fs').writeFileSync('dist/esm/package.json','{\\\"type\\\":\\\"module\\\"}')\"",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
   },
