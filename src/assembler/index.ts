@@ -1,5 +1,5 @@
 import { type Instruction, type WarriorData, type SimulatorOptions, DEFAULT_OPTIONS, Opcode, Modifier, AddressMode, OPCODE_NAMES, MODIFIER_NAMES, ADDRESS_MODE_SYMBOLS } from '../types.js';
-import { encodeOpcode, decodeOpcode, MAX_INSTRUCTIONS } from '../constants.js';
+import { encodeOpcode, decodeOpcode } from '../constants.js';
 import { ExpressionEvaluator } from './expression.js';
 import { normalize } from '../utils/modular-arithmetic.js';
 import { computePSpaceSize } from '../simulator/pspace.js';
@@ -397,11 +397,10 @@ export class Assembler {
       return { success: false, warrior: null, messages };
     }
 
-    // MAXINSTR hard limit (C default: 1000, now configurable via maxInstructions)
-    const effectiveMaxLength = Math.min(opts.maxLength, opts.maxInstructions ?? MAX_INSTRUCTIONS);
-    if (finalInstrCount > effectiveMaxLength) {
+    // Instruction count limit (C pMARS: MAXINSTR in global.h, -l flag)
+    if (finalInstrCount > opts.maxLength) {
       // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)
-      messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${effectiveMaxLength}` });
+      messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${opts.maxLength}` });
     }
 
     // Rebuild labels with correct instruction indices after multi-line EQU expansion

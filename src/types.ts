@@ -63,7 +63,6 @@ export interface SimulatorOptions {
   coreSize: number;
   maxCycles: number;
   maxLength: number;
-  maxInstructions?: number;
   maxProcesses: number;
   minSeparation: number;
   readLimit: number;
@@ -95,7 +94,6 @@ export const DEFAULT_OPTIONS: SimulatorOptions = {
   coreSize: 8000,
   maxCycles: 80000,
   maxLength: 100,
-  maxInstructions: 1000,
   maxProcesses: 8000,
   minSeparation: 100,
   readLimit: 0,

@@ -36,5 +36,4 @@ export const INITIAL_INSTRUCTION: Readonly<Instruction> = Object.freeze(createIn
 
 export const PMARS_VERSION = 96;
 export const MAX_WARRIORS = 36;
-export const MAX_INSTRUCTIONS = 1000;
 export const MAX_PSPACE_DIVISOR = 16;

@@ -69,8 +69,8 @@ MOV #i, 0
   });
 });
 
-describe('MAXINSTR=1000 hard limit', () => {
-  it('should enforce maxLength when below 1000', () => {
+describe('maxLength instruction limit', () => {
+  it('should enforce maxLength when set low', () => {
     const asm = new Assembler({ maxLength: 5 });
     const lines = [];
     for (let i = 0; i < 6; i++) lines.push('DAT 0, 0');
@@ -79,18 +79,18 @@ describe('MAXINSTR=1000 hard limit', () => {
     expect(result.messages.some(m => m.type === 'ERROR' && m.text.includes('limit is 5'))).toBe(true);
   });
 
-  it('should cap effective maxLength at 1000 even when maxLength is higher', () => {
+  it('should allow >1000 instructions when maxLength is raised', () => {
     const asm = new Assembler({ maxLength: 2000 });
-    // Generate 1001 instructions
     const lines = [];
     for (let i = 0; i < 1001; i++) lines.push('DAT 0, 0');
     const source = `;redcode\n;assert 1\n${lines.join('\n')}`;
     const result = asm.assemble(source);
-    expect(result.messages.some(m => m.type === 'ERROR' && m.text.includes('limit is 1000'))).toBe(true);
+    expect(result.messages.filter(m => m.type === 'ERROR').length).toBe(0);
+    expect(result.warrior!.instructions.length).toBe(1001);
   });
 
-  it('should allow exactly 1000 instructions', () => {
-    const asm = new Assembler({ maxLength: 2000 });
+  it('should allow exactly maxLength instructions', () => {
+    const asm = new Assembler({ maxLength: 1000 });
     const lines = [];
     for (let i = 0; i < 1000; i++) lines.push('DAT 0, 0');
     const source = `;redcode\n;assert 1\n${lines.join('\n')}`;
