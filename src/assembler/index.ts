@@ -397,7 +397,7 @@ export class Assembler {
       return { success: false, warrior: null, messages };
     }
 
-    // MAXINSTR hard limit (matches C's global.h MAXINSTR=1000)
+    // MAXINSTR hard limit (C default: 1000, now configurable via maxInstructions)
     const effectiveMaxLength = Math.min(opts.maxLength, opts.maxInstructions ?? MAX_INSTRUCTIONS);
     if (finalInstrCount > effectiveMaxLength) {
       // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)

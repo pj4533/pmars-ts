@@ -63,7 +63,7 @@ export interface SimulatorOptions {
   coreSize: number;
   maxCycles: number;
   maxLength: number;
-  maxInstructions: number;
+  maxInstructions?: number;
   maxProcesses: number;
   minSeparation: number;
   readLimit: number;

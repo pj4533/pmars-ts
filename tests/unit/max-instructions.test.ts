@@ -121,4 +121,44 @@ MOV 0, 1`;
     const result = corewar.step();
     expect(result).toBeNull();
   });
+
+  it('compat layer assembles >1000 instruction warrior through full pipeline', () => {
+    // Generate a 1200-instruction warrior via FOR/ROF
+    const source = `;redcode
+;name LargeCompatWarrior
+FOR 1200
+MOV 0, 1
+ROF`;
+    const filler = `;redcode
+;name Filler
+MOV 0, 1`;
+
+    // parse() uses the default assembler (maxInstructions=1000) so it would reject 1200.
+    // initialiseSimulator re-assembles from `data` source text when source.success is true,
+    // so we construct a stub IParseResult and let initialiseSimulator do the real assembly
+    // with the raised instructionLimit.
+    const stubParseResult = {
+      metaData: { name: 'LargeCompatWarrior', author: '', strategy: '' },
+      tokens: [],
+      messages: [],
+      success: true,
+    };
+
+    const fillerResult = corewar.parse(filler);
+    expect(fillerResult.success).toBe(true);
+
+    const w1 = { source: stubParseResult, data: source };
+    const w2 = { source: fillerResult, data: filler };
+
+    // initialiseSimulator re-assembles from source text with instructionLimit: 2000
+    // which maps to both maxLength and maxInstructions, allowing the 1200-instruction warrior
+    corewar.initialiseSimulator(
+      { coresize: 8000, maximumCycles: 80000, instructionLimit: 2000, maxTasks: 8000, minSeparation: 100 },
+      [w1, w2],
+    );
+
+    // Step should work — the large warrior was re-assembled and loaded successfully
+    const result = corewar.step();
+    expect(result).toBeNull();
+  });
 });
