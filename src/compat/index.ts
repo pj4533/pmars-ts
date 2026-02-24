@@ -118,6 +118,7 @@ class CorewarCompat {
       coreSize: options.coresize,
       maxCycles: options.maximumCycles,
       maxLength: options.instructionLimit,
+      maxInstructions: options.instructionLimit,
       maxProcesses: options.maxTasks,
       minSeparation: options.minSeparation,
       readLimit: options.readLimit,

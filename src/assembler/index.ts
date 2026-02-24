@@ -398,7 +398,7 @@ export class Assembler {
     }
 
     // MAXINSTR hard limit (matches C's global.h MAXINSTR=1000)
-    const effectiveMaxLength = Math.min(opts.maxLength, MAX_INSTRUCTIONS);
+    const effectiveMaxLength = Math.min(opts.maxLength, opts.maxInstructions ?? MAX_INSTRUCTIONS);
     if (finalInstrCount > effectiveMaxLength) {
       // C treats exceeding instrLim as an error (LINERR, asm.c:1489-1491)
       messages.push({ type: 'ERROR', line: 0, text: `Warrior has ${finalInstrCount} instructions, limit is ${effectiveMaxLength}` });
