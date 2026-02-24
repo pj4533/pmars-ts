@@ -34,7 +34,15 @@
     "simulator",
     "assembler"
   ],
-  "author": "",
+  "author": "pj4533",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pj4533/pmars-ts.git"
+  },
+  "homepage": "https://github.com/pj4533/pmars-ts",
+  "bugs": {
+    "url": "https://github.com/pj4533/pmars-ts/issues"
+  },
   "license": "GPL-2.0",
   "devDependencies": {
     "@vitest/coverage-v8": "^3.0.0",
