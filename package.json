@@ -1,6 +1,6 @@
 {
   "name": "pmars-ts",
-  "version": "0.2.2",
+  "version": "1.0.0",
   "description": "TypeScript port of pmars (portable Memory Array Redcode Simulator) for Corewar",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
