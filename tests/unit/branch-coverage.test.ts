@@ -3,7 +3,6 @@ import { Simulator } from '../../src/simulator/index';
 import { Assembler } from '../../src/assembler/index';
 import { type WarriorData, Opcode, Modifier, AddressMode } from '../../src/types';
 import { positionWarriors } from '../../src/simulator/positioning';
-import { corewar } from '../../src/compat/index';
 
 function makeWarrior(source: string, opts?: { coreSize?: number }): WarriorData {
   const asm = new Assembler({ coreSize: opts?.coreSize ?? 80, maxLength: 100, maxProcesses: 80 });
@@ -335,23 +334,6 @@ describe('Expression evaluator branches', () => {
   });
 });
 
-// --- Compat: parseResultToWarriorData fallback ---
-describe('Compat parseResultToWarriorData', () => {
-  it('uses parseResult when source text not available', () => {
-    const parseResult = corewar.parse('MOV $0, $1');
-    // Create warrior without data field (no source text)
-    const w1 = { source: parseResult };
-    const w2 = { source: corewar.parse('JMP $0'), data: 'JMP $0' };
-    // Should not throw even without data field
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 5, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1 as any, w2],
-    );
-    const result = corewar.run();
-    expect(result).toBeDefined();
-  });
-});
-
 // --- Simulator: warrior name/author defaults ---
 describe('Warrior data defaults', () => {
   it('warrior without name gets default', () => {
@@ -397,17 +379,6 @@ describe('SLT I modifier', () => {
     const pos = warriors[0].position;
     const nextPC = warriors[0].processQueue.toArray()[0];
     expect(nextPC).toBe((pos + 2) % 80);
-  });
-});
-
-// --- Compat run throws when not initialized ---
-describe('Compat run without init', () => {
-  it('throws when simulator not initialized', () => {
-    const c = (corewar as any);
-    const saved = c.simulator;
-    c.simulator = null;
-    expect(() => corewar.run()).toThrow('Simulator not initialized');
-    c.simulator = saved;
   });
 });
 
@@ -524,37 +495,6 @@ describe('Assembler error paths', () => {
     const result = asm.assemble('val EQU CORESIZE\nDAT #val');
     expect(result.success).toBe(true);
     expect(result.warrior!.instructions[0].bValue).toBe(0); // 80 mod 80 = 0
-  });
-});
-
-// --- Compat instructionToCompat fallback cases ---
-describe('Compat type conversion edge cases', () => {
-  it('getWithInfoAt for uninitialized address', () => {
-    const w1 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w2 = { source: corewar.parse('JMP $0'), data: 'JMP $0' };
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 5, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1, w2],
-    );
-    // Address 50 should have the default DAT instruction
-    const loc = corewar.getWithInfoAt(50);
-    expect(loc.instruction.opcode).toBeDefined();
-  });
-
-  it('handles step that ends the round', () => {
-    const w1 = { source: corewar.parse('DAT #0, #0'), data: 'DAT #0, #0' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1, w2],
-    );
-    // Step enough times for DAT warrior to die
-    let result = null;
-    for (let i = 0; i < 5 && result === null; i++) {
-      result = corewar.step();
-    }
-    expect(result).not.toBeNull();
-    expect(result!.winnerId).toBe(1);
   });
 });
 
@@ -677,20 +617,6 @@ describe('JMZ non-jump paths', () => {
     const pos = warriors[0].position;
     const nextPC = warriors[0].processQueue.toArray()[0];
     expect(nextPC).toBe((pos + 3) % 80);
-  });
-});
-
-// --- Compat: instructionToCompat with LDP/STP (opcodes not in map) ---
-describe('Compat opcode type mapping', () => {
-  it('maps LDP opcode', () => {
-    const w1 = { source: corewar.parse('LDP #1, $1\nDAT #0, #0'), data: 'LDP #1, $1\nDAT #0, #0' };
-    const w2 = { source: corewar.parse('JMP $0'), data: 'JMP $0' };
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 5, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1, w2],
-    );
-    const loc = corewar.getWithInfoAt(0);
-    expect(loc.instruction).toBeDefined();
   });
 });
 

@@ -3,7 +3,6 @@ import { Simulator } from '../../src/simulator/index';
 import { Assembler, disassemble } from '../../src/assembler/index';
 import { type WarriorData, Opcode, Modifier, AddressMode } from '../../src/types';
 import { encodeOpcode } from '../../src/constants';
-import { corewar } from '../../src/compat/index';
 import { positionWarriors } from '../../src/simulator/positioning';
 import { ExpressionEvaluator } from '../../src/assembler/expression';
 
@@ -455,45 +454,6 @@ describe('SPL exact boundary at maxProcesses', () => {
     // Step 5 (w1): pop P, SPL $0 → push P+1, tasks(3) not < 3 → no increment
     sim.step();
     expect(sim.getWarriors()[0].tasks).toBe(3);
-  });
-});
-
-// =============================================================================
-// TEST GAP: Compat initialiseSimulator with failed parse
-// =============================================================================
-describe('Compat API edge cases', () => {
-  it('handles warrior with success=false in initialiseSimulator', () => {
-    const warrior1 = {
-      source: corewar.parse('MOV $0, $1'),
-      data: 'MOV $0, $1',
-    };
-    const failedWarrior = {
-      source: { ...corewar.parse('INVALID_GARBAGE'), success: false },
-      data: 'INVALID_GARBAGE',
-    };
-
-    // Should not throw - failed warriors are skipped
-    expect(() => {
-      corewar.initialiseSimulator(
-        { coresize: 8000, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 100 },
-        [warrior1, failedWarrior],
-      );
-    }).not.toThrow();
-  });
-
-  it('step with steps=0 defaults to 1', () => {
-    const w1src = ';assert 1\nMOV $0, $1';
-    const w2src = ';assert 1\nJMP $0';
-    const warrior1 = { source: corewar.parse(w1src), data: w1src };
-    const warrior2 = { source: corewar.parse(w2src), data: w2src };
-    corewar.initialiseSimulator(
-      { coresize: 8000, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 100 },
-      [warrior1, warrior2],
-    );
-    // steps=0 is falsy, should default to 1 and execute exactly 1 step
-    const result = corewar.step(0);
-    // Round should not be complete after 1 step with 2 warriors
-    expect(result).toBeNull();
   });
 });
 

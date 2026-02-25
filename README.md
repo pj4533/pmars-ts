@@ -26,23 +26,6 @@ const results = sim.run();
 console.log(results[0].outcome, results[0].winnerId);
 ```
 
-### Compat API
-
-```typescript
-import { corewar } from 'pmars-ts';
-
-const result = corewar.parse(';redcode\n;name Imp\nMOV.I $0, $1');
-console.log(result.success, result.metaData.name);
-
-corewar.initialiseSimulator(
-  { coresize: 8000, maximumCycles: 80000, instructionLimit: 100, maxTasks: 8000, minSeparation: 100 },
-  [{ source: result }]
-);
-
-const roundResult = corewar.run();
-console.log(roundResult);
-```
-
 ## API Reference
 
 ### Assembler
@@ -73,19 +56,6 @@ const stepResult = sim.step();         // Step one instruction
 | `maxProcesses` | 8000 | Maximum processes per warrior |
 | `minSeparation` | 100 | Minimum distance between warriors |
 | `rounds` | 1 | Number of rounds to simulate |
-
-### Compat API
-
-```typescript
-import { corewar } from 'pmars-ts';
-
-corewar.parse(source)
-corewar.initialiseSimulator(options, warriors, messageProvider?)
-corewar.run()
-corewar.step(steps?)
-corewar.runMatch(rules, warriors, messageProvider?)
-corewar.runHill(rules, warriors, messageProvider?)
-```
 
 ## Features
 

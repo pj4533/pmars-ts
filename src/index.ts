@@ -17,15 +17,3 @@ export { encodeOpcode, decodeOpcode, createInstruction, INITIAL_INSTRUCTION } fr
 export { addMod, subMod, normalize, mulMod } from './utils/modular-arithmetic.js';
 export { CircularQueue } from './utils/circular-queue.js';
 export { rng } from './utils/rng.js';
-
-// Compat API
-export { corewar } from './compat/index.js';
-export {
-  ModeType, OpcodeType, ModifierType, TokenCategory, MessageType, CoreAccessType,
-} from './compat/types.js';
-export type {
-  IParseResult, IWarrior, IOptions, IPublishProvider, IRoundResult,
-  IToken, ICoreLocation, IInstruction, IMatchResult, IHillResult,
-  IRules, IMatchWarriorResult, IHillWarriorResult, IOperand,
-  IPosition, IMessage, IMetaData, IMatchWarrior, ICoreAccessEventArgs,
-} from './compat/types.js';

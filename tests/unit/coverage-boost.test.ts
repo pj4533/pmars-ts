@@ -4,7 +4,6 @@ import { Assembler } from '../../src/assembler/index';
 import { type WarriorData, Opcode, Modifier, AddressMode } from '../../src/types';
 import { encodeOpcode, decodeOpcode } from '../../src/constants';
 import { disassemble } from '../../src/assembler/index';
-import { corewar } from '../../src/compat/index';
 
 function makeWarrior(source: string, opts?: { coreSize?: number; maxLength?: number }): WarriorData {
   const asm = new Assembler({ coreSize: opts?.coreSize ?? 80, maxLength: opts?.maxLength ?? 100, maxProcesses: 80 });
@@ -150,81 +149,6 @@ describe('disassemble', () => {
     const str = disassemble(inst, 80);
     expect(str).toContain('#');
     expect(str).toContain('@');
-  });
-});
-
-// --- Compat layer coverage ---
-describe('Compat runMatch', () => {
-  it('runs a match with multiple rounds', () => {
-    const w1 = { source: corewar.parse('DAT #0, #0'), data: 'DAT #0, #0' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const result = corewar.runMatch(
-      { rounds: 2, options: { coresize: 80, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 10 } },
-      [w1, w2],
-    );
-    expect(result.rounds).toBe(2);
-    expect(result.warriors.length).toBe(2);
-    expect(result.warriors[1].won).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe('Compat runHill', () => {
-  it('runs a hill with 3 warriors', () => {
-    const w1 = { source: corewar.parse('DAT #0, #0'), data: 'DAT #0, #0' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w3 = { source: corewar.parse('JMP $0'), data: 'JMP $0' };
-    const result = corewar.runHill(
-      { rounds: 1, options: { coresize: 80, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 10 } },
-      [w1, w2, w3],
-    );
-    expect(result.warriors.length).toBe(3);
-    expect(result.warriors[0].rank).toBe(1);
-    expect(result.warriors[2].rank).toBe(3);
-  });
-});
-
-describe('Compat serialise and republish', () => {
-  it('serialise returns empty string', () => {
-    expect(corewar.serialise([])).toBe('');
-  });
-
-  it('republish is a no-op', () => {
-    expect(() => corewar.republish()).not.toThrow();
-  });
-});
-
-describe('Compat step without init', () => {
-  it('step returns null when not initialized', () => {
-    const c = (corewar as any);
-    const saved = c.simulator;
-    c.simulator = null;
-    const result = corewar.step();
-    expect(result).toBeNull();
-    c.simulator = saved;
-  });
-});
-
-describe('Compat getWithInfoAt without sim', () => {
-  it('returns default instruction when no sim', () => {
-    const c = (corewar as any);
-    const saved = c.simulator;
-    c.simulator = null;
-    const loc = corewar.getWithInfoAt(0);
-    expect(loc.instruction).toBeDefined();
-    c.simulator = saved;
-  });
-});
-
-describe('Compat parse with tie outcome', () => {
-  it('run with tie produces draw', () => {
-    const w1 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 5, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1, w2],
-    );
-    const result = corewar.run();
-    expect(result.outcome).toBe('TIE');
   });
 });
 
@@ -604,46 +528,3 @@ describe('Expression evaluator edge cases', () => {
   });
 });
 
-// --- Compat runBenchmark ---
-describe('Compat runBenchmark', () => {
-  it('runs a benchmark', () => {
-    const w1 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w2 = { source: corewar.parse('DAT #0, #0'), data: 'DAT #0, #0' };
-    const w3 = { source: corewar.parse('JMP $0'), data: 'JMP $0' };
-    const result = corewar.runBenchmark(
-      w1,
-      { rounds: 1, options: { coresize: 80, maximumCycles: 100, instructionLimit: 100, maxTasks: 80, minSeparation: 10 } },
-      [w2, w3],
-    );
-    expect(result.warriors.length).toBe(3);
-  });
-});
-
-// --- Compat step with multiple steps ---
-describe('Compat step with count', () => {
-  it('steps multiple times', () => {
-    const w1 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    corewar.initialiseSimulator(
-      { coresize: 80, maximumCycles: 10, instructionLimit: 100, maxTasks: 80, minSeparation: 10 },
-      [w1, w2],
-    );
-    const result = corewar.step(3);
-    // 3 steps of a tie game should not end the round
-    expect(result).toBeNull();
-  });
-});
-
-// --- Compat match with tie ---
-describe('Compat runMatch with tie', () => {
-  it('records draws when match ties', () => {
-    const w1 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const w2 = { source: corewar.parse('MOV $0, $1'), data: 'MOV $0, $1' };
-    const result = corewar.runMatch(
-      { rounds: 1, options: { coresize: 80, maximumCycles: 5, instructionLimit: 100, maxTasks: 80, minSeparation: 10 } },
-      [w1, w2],
-    );
-    expect(result.warriors[0].drawn).toBe(1);
-    expect(result.warriors[1].drawn).toBe(1);
-  });
-});

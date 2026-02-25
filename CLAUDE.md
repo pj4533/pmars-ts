@@ -27,9 +27,6 @@ src/
 │   ├── warrior.ts            # Warrior state and process queue
 │   ├── pspace.ts             # P-space shared memory
 │   └── positioning.ts        # Warrior positioning with deterministic RNG
-├── compat/
-│   ├── index.ts              # Compatibility API wrapper
-│   └── types.ts              # Compat API type definitions
 └── utils/
     ├── rng.ts                # Park-Miller MINSTD RNG (matches original pmars)
     ├── circular-queue.ts     # Process queue (FIFO)
@@ -37,14 +34,13 @@ src/
 tests/
 ├── unit/                     # Unit tests per module
 └── integration/              # Full assembly → battle integration tests
-examples/                     # Usage examples (basic-battle, parse-warrior, compat-battle)
+examples/                     # Usage examples (basic-battle, parse-warrior)
 ```
 
 ## Architecture
 
 - **Assembler**: Two-pass Redcode parser. Pass 1 collects labels/EQUs, pass 2 assembles instructions. Supports FOR/ROF loops, ORG, PIN, and all ICWS'94 directives.
 - **Simulator**: Executes warriors in round-robin with process queues. Implements all 19 opcodes with 7 modifiers and 8 addressing modes. Event-driven (CoreAccess, TaskCount, RoundEnd).
-- **Compat layer**: Wraps Assembler + Simulator with a convenience API (`parse`, `initialiseSimulator`, `run`, `step`, `runMatch`, `runHill`).
 
 ## Key Details
 

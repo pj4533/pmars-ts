@@ -10,7 +10,6 @@ import { Simulator } from '../../src/simulator/index';
 import { PSpace, computePSpaceSize } from '../../src/simulator/pspace';
 import { Opcode, Modifier, AddressMode } from '../../src/types';
 import { encodeOpcode } from '../../src/constants';
-import { OpcodeType } from '../../src/compat/index';
 
 // Helper to create a minimal warrior
 function makeWarrior(instructions: { op: Opcode; mod: Modifier; aMode: AddressMode; aVal: number; bMode: AddressMode; bVal: number }[], startOffset = 0, pin: number | null = null) {
@@ -207,25 +206,6 @@ describe('Read/write limits (foldr/foldw)', () => {
     const core = sim.getCore();
     const pos = sim.getWarriors()[0].position;
     expect(core.get((pos + 50) % 100).aValue).toBe(42);
-  });
-});
-
-// --- COMPAT LDP/STP ---
-describe('Compat LDP/STP (bug #8)', () => {
-  it('OpcodeType includes LDP and STP', () => {
-    expect(OpcodeType.LDP).toBe('LDP');
-    expect(OpcodeType.STP).toBe('STP');
-  });
-
-  it('compat API parses LDP/STP warriors', () => {
-    const asm = new Assembler();
-    const result = asm.assemble(`;redcode
-;name LDP Test
-LDP.B #1, $2
-STP.B #3, $4
-DAT #0, #0`);
-    expect(result.success).toBe(true);
-    expect(result.warrior!.instructions.length).toBe(3);
   });
 });
 

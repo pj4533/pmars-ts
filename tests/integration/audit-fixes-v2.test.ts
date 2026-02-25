@@ -7,8 +7,6 @@ import { Assembler } from '../../src/assembler/index';
 import { Simulator } from '../../src/simulator/index';
 import { Opcode, Modifier, AddressMode, DEFAULT_OPTIONS } from '../../src/types';
 import { encodeOpcode } from '../../src/constants';
-import { corewar } from '../../src/compat/index';
-import type { IRules, IWarrior } from '../../src/compat/types';
 
 function makeWarrior(instructions: { op: Opcode; mod: Modifier; aMode: AddressMode; aVal: number; bMode: AddressMode; bVal: number }[], startOffset = 0) {
   return {
@@ -181,92 +179,3 @@ describe('MAXWARRIOR validation', () => {
   });
 });
 
-describe('Compat IOptions new fields', () => {
-  it('should pass readLimit and writeLimit through to simulator', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w: IWarrior = { source: parseResult, data: source };
-
-    // Should not throw with new options
-    corewar.initialiseSimulator(
-      { coresize: 8000, readLimit: 100, writeLimit: 100 },
-      [w, w],
-    );
-    const result = corewar.run();
-    expect(result.outcome).toBeDefined();
-  });
-
-  it('should pass pSpaceSize through to simulator', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w: IWarrior = { source: parseResult, data: source };
-
-    corewar.initialiseSimulator(
-      { coresize: 8000, pSpaceSize: 50 },
-      [w, w],
-    );
-    const result = corewar.run();
-    expect(result.outcome).toBeDefined();
-  });
-
-  it('should pass seed through to simulator', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w: IWarrior = { source: parseResult, data: source };
-
-    corewar.initialiseSimulator(
-      { coresize: 8000, seed: 12345 },
-      [w, w],
-    );
-    const result = corewar.run();
-    expect(result.outcome).toBeDefined();
-  });
-
-  it('should pass fixedSeries through to simulator', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w: IWarrior = { source: parseResult, data: source };
-
-    corewar.initialiseSimulator(
-      { coresize: 8000, fixedSeries: true },
-      [w, w],
-    );
-    const result = corewar.run();
-    expect(result.outcome).toBeDefined();
-  });
-});
-
-describe('Configurable score formula', () => {
-  it('should use default scoring when no formula provided', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w1: IWarrior = { source: parseResult, data: source };
-    const w2: IWarrior = { source: parseResult, data: source };
-
-    const rules: IRules = { rounds: 1, options: { coresize: 8000 } };
-    const result = corewar.runHill(rules, [w1, w2]);
-    // Default scoring: wins*3 + draws
-    expect(result.warriors.length).toBe(2);
-    for (const w of result.warriors) {
-      expect(w.score).toBe(w.won * 3 + w.drawn);
-    }
-  });
-
-  it('should use custom score formula when provided', () => {
-    const source = `;redcode\n;assert 1\nMOV 0, 1`;
-    const parseResult = corewar.parse(source);
-    const w1: IWarrior = { source: parseResult, data: source };
-    const w2: IWarrior = { source: parseResult, data: source };
-
-    // Custom formula: wins*5 + draws*2
-    const rules: IRules = {
-      rounds: 1,
-      options: { coresize: 8000 },
-      scoreFormula: (wins, _losses, draws, _numWarriors) => wins * 5 + draws * 2,
-    };
-    const result = corewar.runHill(rules, [w1, w2]);
-    for (const w of result.warriors) {
-      expect(w.score).toBe(w.won * 5 + w.drawn * 2);
-    }
-  });
-});
